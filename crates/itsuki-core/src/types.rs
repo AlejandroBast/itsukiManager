@@ -95,9 +95,8 @@ impl Category {
             }
             "sys" | "drv" | "cat" | "mui" | "inf" | "etl" | "evtx" | "dmp" | "manifest" | "efi" | "regtrans-ms"
             | "blf" => Category::System,
-            "tmp" | "temp" | "cache" | "log" | "bak" | "old" | "part" | "crdownload" | "partial" | "dlcache" => {
-                Category::Temporary
-            }
+            "tmp" | "temp" | "cache" | "log" | "bak" | "old" | "part" | "crdownload" | "partial" | "dlcache"
+            | "nvph" | "dxcache" | "shadercache" => Category::Temporary,
             _ => Category::Other,
         }
     }
