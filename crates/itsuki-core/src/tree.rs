@@ -97,13 +97,15 @@ pub struct ScanStats {
     pub denied: u64,
     /// Enlaces duros repetidos que no se sumaron dos veces.
     pub hardlinks: u64,
-    /// Motor usado: `"nativo"` o `"portable"`.
+    /// Motor usado: `"mft"`, `"nativo"` o `"portable"`.
     pub engine: &'static str,
     pub threads: usize,
     /// El proceso tenía permisos de administrador.
     pub elevated: bool,
     /// Se activó el privilegio de copia de seguridad (lee carpetas protegidas).
     pub backup_privilege: bool,
+    /// Por qué no se pudo usar el motor MFT en modo automático.
+    pub mft_error: Option<String>,
 }
 
 /// Resultado de un escaneo.
@@ -307,12 +309,8 @@ impl Tree {
 
     /// Suma tamaños y archivos de abajo hacia arriba.
     fn aggregate(&mut self) {
+        // Las carpetas parten de su propio espacio (índices de NTFS en el motor MFT, 0 en los demás).
         let nodes = &mut self.nodes;
-        for n in nodes.iter_mut().filter(|n| n.is_dir()) {
-            n.size = 0;
-            n.alloc = 0;
-            n.files = 0;
-        }
         for i in (1..nodes.len()).rev() {
             let n = nodes[i];
             let (size, alloc, files) = if n.is_dir() {

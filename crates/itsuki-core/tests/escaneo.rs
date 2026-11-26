@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use itsuki_core::{Engine, Metric, ROOT, ScanError, ScanOptions, ScanProgress, Tree, flags, scan};
 
@@ -194,4 +194,73 @@ fn errores_de_ruta() {
     assert!(matches!(scan(&archivo, &ScanOptions::default(), &ScanProgress::new()), Err(ScanError::NotADirectory(_))));
     let falta = t.0.join("no-existe");
     assert!(matches!(scan(&falta, &ScanOptions::default(), &ScanProgress::new()), Err(ScanError::Io { .. })));
+}
+
+/// Compara el motor MFT con el nativo. Solo se ejecuta como administrador.
+#[cfg(windows)]
+#[test]
+fn mft_coincide_con_nativo() {
+    use std::io::Write;
+    if !itsuki_core::system::is_elevated() {
+        eprintln!("mft_coincide_con_nativo omitida: requiere administrador");
+        return;
+    }
+    let t = TempDir::new("mft");
+    // Se fuerza la escritura a disco: el motor MFT lee el volumen directamente.
+    let write_synced = |rel: &str, bytes: usize| {
+        let p = t.0.join(rel);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let mut f = fs::File::create(&p).unwrap();
+        f.write_all(&vec![3u8; bytes]).unwrap();
+        f.sync_all().unwrap();
+        p
+    };
+    let original = write_synced("a/grande.bin", 300_000);
+    write_synced("a/sub/b.bin", 20_000);
+    write_synced("c/ñandú 日本.txt", 1234);
+    fs::hard_link(&original, t.0.join("c").join("enlace.bin")).unwrap();
+    let ok = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(t.0.join("union"))
+        .arg(t.0.join("a"))
+        .output()
+        .unwrap()
+        .status
+        .success();
+    assert!(ok);
+    let expected = 300_000 + 20_000 + 1234;
+
+    // NTFS escribe los registros de la MFT en segundo plano: se reintenta unos segundos.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mft = loop {
+        let tree = scan_with(&t.0, Engine::Mft, true);
+        if tree.node(ROOT).size == expected && tree.stats().files == 4 || Instant::now() > deadline {
+            break tree;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    let native = scan_with(&t.0, Engine::Native, true);
+    assert_eq!(mft.stats().engine, "mft");
+    assert_eq!(mft.node(ROOT).size, expected);
+    assert_eq!(mft.node(ROOT).size, native.node(ROOT).size);
+    assert_eq!(mft.stats().files, native.stats().files);
+    assert_eq!(mft.stats().hardlinks, 1);
+    let u = find(&mft, &t.0, "union");
+    assert!(mft.node(u).has(flags::LINK));
+    assert_eq!(mft.node(u).child_count(), 0);
+    let txt = find(&mft, &t.0, "c/ñandú 日本.txt");
+    assert_eq!(mft.node(txt).size, 1234);
+    assert!(fs::metadata(mft.path(txt)).is_ok());
+}
+
+/// Sin permisos de administrador el motor MFT avisa en vez de fallar raro.
+#[cfg(windows)]
+#[test]
+fn mft_sin_admin_da_error_claro() {
+    if itsuki_core::system::is_elevated() {
+        return;
+    }
+    let t = TempDir::new("mft-sin-admin");
+    let opts = ScanOptions { engine: Engine::Mft, ..Default::default() };
+    assert!(matches!(scan(&t.0, &opts, &ScanProgress::new()), Err(ScanError::NeedsAdmin)));
 }

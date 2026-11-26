@@ -8,9 +8,11 @@
 //! println!("{} bytes en disco", tree.node(tree.root()).alloc);
 //! ```
 
+mod mft;
 #[cfg(windows)]
 mod native;
 mod portable;
+mod util;
 mod walk;
 
 use std::fmt;
@@ -27,9 +29,12 @@ use crate::tree::{ScanStats, Tree};
 /// Motor de lectura de carpetas.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Engine {
-    /// El más rápido disponible (nativo en Windows).
+    /// El más rápido disponible: MFT si se escanea una unidad NTFS completa
+    /// como administrador; si no, el nativo.
     #[default]
     Auto,
+    /// Lectura directa de la MFT de NTFS (administrador, volúmenes locales).
+    Mft,
     /// API nativa de Windows (NtCreateFile + GetFileInformationByHandleEx).
     Native,
     /// `std::fs`, portable y más lento.
@@ -95,6 +100,19 @@ impl ScanProgress {
     pub fn is_cancelled(&self) -> bool {
         self.cancel.load(Relaxed)
     }
+
+    pub(crate) fn add(&self, files: u64, dirs: u64, bytes: u64) {
+        self.files.fetch_add(files, Relaxed);
+        self.dirs.fetch_add(dirs, Relaxed);
+        self.bytes.fetch_add(bytes, Relaxed);
+    }
+
+    /// Vuelve a cero los contadores (no la cancelación).
+    pub(crate) fn reset(&self) {
+        for c in [&self.files, &self.dirs, &self.bytes, &self.errors] {
+            c.store(0, Relaxed);
+        }
+    }
 }
 
 /// Error de escaneo.
@@ -111,6 +129,8 @@ pub enum ScanError {
     Cancelled,
     /// El motor pedido no existe en este sistema.
     Unsupported(&'static str),
+    /// El motor MFT necesita permisos de administrador.
+    NeedsAdmin,
     ThreadPool(String),
 }
 
@@ -121,6 +141,7 @@ impl fmt::Display for ScanError {
             ScanError::NotADirectory(p) => write!(f, "{} no es una carpeta", p.display()),
             ScanError::Cancelled => write!(f, "escaneo cancelado"),
             ScanError::Unsupported(what) => write!(f, "no disponible en este sistema: {what}"),
+            ScanError::NeedsAdmin => write!(f, "el motor MFT necesita ejecutar itsuki como administrador"),
             ScanError::ThreadPool(e) => write!(f, "no se pudieron crear los hilos: {e}"),
         }
     }
@@ -156,29 +177,46 @@ pub fn scan(root: impl AsRef<Path>, opts: &ScanOptions, progress: &ScanProgress)
     let backup_privilege = elevated && system::enable_backup_privilege();
     let io_err = |source| ScanError::Io { path: root.clone(), source };
 
+    let keep_ids = opts.dedupe_hardlinks;
+    let mut mft_error = None;
     let (engine, out) = match opts.engine {
+        Engine::Portable => {
+            ("portable", walk::run(&portable::PortableBackend, &root, &pool, progress, keep_ids).map_err(io_err)?)
+        }
         #[cfg(windows)]
-        Engine::Auto | Engine::Native => (
-            "nativo",
-            walk::run(&native::NativeBackend::new(), &root, &pool, progress, opts.dedupe_hardlinks).map_err(io_err)?,
-        ),
+        Engine::Mft => {
+            if !elevated {
+                return Err(ScanError::NeedsAdmin);
+            }
+            ("mft", mft::scan(&root, &pool, progress, keep_ids).map_err(io_err)?)
+        }
+        #[cfg(windows)]
+        Engine::Auto if elevated && root.parent().is_none() => match mft::scan(&root, &pool, progress, keep_ids) {
+            Ok(out) => ("mft", out),
+            Err(e) => {
+                // Volumen no NTFS, de red, etc.: se usa el motor nativo.
+                mft_error = Some(e.to_string());
+                progress.reset();
+                ("nativo", walk::run(&native::NativeBackend::new(), &root, &pool, progress, keep_ids).map_err(io_err)?)
+            }
+        },
+        #[cfg(windows)]
+        Engine::Auto | Engine::Native => {
+            ("nativo", walk::run(&native::NativeBackend::new(), &root, &pool, progress, keep_ids).map_err(io_err)?)
+        }
+        #[cfg(not(windows))]
+        Engine::Mft => return Err(ScanError::Unsupported("motor MFT de Windows")),
         #[cfg(not(windows))]
         Engine::Native => return Err(ScanError::Unsupported("motor nativo de Windows")),
         #[cfg(not(windows))]
-        Engine::Auto => (
-            "portable",
-            walk::run(&portable::PortableBackend, &root, &pool, progress, opts.dedupe_hardlinks).map_err(io_err)?,
-        ),
-        Engine::Portable => (
-            "portable",
-            walk::run(&portable::PortableBackend, &root, &pool, progress, opts.dedupe_hardlinks).map_err(io_err)?,
-        ),
+        Engine::Auto => {
+            ("portable", walk::run(&portable::PortableBackend, &root, &pool, progress, keep_ids).map_err(io_err)?)
+        }
     };
     if progress.is_cancelled() {
         return Err(ScanError::Cancelled);
     }
-
-    let stats = ScanStats { engine, threads, elevated, backup_privilege, ..Default::default() };
+    let stats = ScanStats { engine, threads, elevated, backup_privilege, mft_error, ..Default::default() };
     let mut tree = Tree::build(out.nodes, out.names, out.ids, root, out.denied, stats);
     tree.set_elapsed(start.elapsed());
     Ok(tree)
