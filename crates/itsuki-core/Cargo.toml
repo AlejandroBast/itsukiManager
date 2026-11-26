@@ -1,0 +1,14 @@
+[package]
+name = "itsuki-core"
+description = "Núcleo de itsukiManager: escaneo ultrarrápido del disco y análisis del espacio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+rayon = "1.12.0"
+serde = { version = "1.0.229", features = ["derive"] }
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Threading", "Win32_System_IO", "Win32_System_Ioctl", "Win32_UI_Shell", "Win32_System_Com", "Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_System_Kernel"] }
