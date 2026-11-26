@@ -1,0 +1,20 @@
+[workspace]
+resolver = "3"
+members = ["crates/itsuki-core", "crates/itsuki-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+repository = "https://github.com/AlejandroBast/itsukiManager"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+
+# Perfil para medir rendimiento con símbolos.
+[profile.bench]
+inherits = "release"
+strip = false
+debug = true

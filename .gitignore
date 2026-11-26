@@ -1,0 +1,18 @@
+# Compilación de Rust
+/target/
+
+# Memoria local de desarrollo (no se sube)
+memoriitsukiManager.md
+
+# Informes generados por itsuki (contienen rutas personales)
+/informes/
+informe*.csv
+informe*.json
+
+# Editores y sistema
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store
