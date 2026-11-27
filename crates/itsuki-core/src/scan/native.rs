@@ -10,9 +10,7 @@
 //!   que permite leer carpetas protegidas.
 
 use std::cell::RefCell;
-use std::ffi::OsString;
 use std::io;
-use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::Path;
 use std::ptr::{self, addr_of};
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -36,18 +34,12 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
+use super::util::{REPARSE_TAG_NAME_SURROGATE, filetime_to_unix, push_name, verbatim};
 use super::walk::{Backend, Batch};
 use crate::tree::flags;
 
 /// Tamaño del búfer de enumeración por hilo.
 const BUF_BYTES: usize = 64 * 1024;
-
-/// Bit "name surrogate" de las etiquetas de reparse: uniones, enlaces
-/// simbólicos y puntos de montaje. Esas carpetas no se recorren.
-const REPARSE_TAG_NAME_SURROGATE: u32 = 0x2000_0000;
-
-/// Diferencia entre la época de FILETIME (1601) y la Unix (1970), en 100 ns.
-const FILETIME_UNIX_DIFF: i64 = 116_444_736_000_000_000;
 
 thread_local! {
     static BUF: RefCell<Vec<u64>> = RefCell::new(vec![0u64; BUF_BYTES / 8]);
@@ -298,94 +290,4 @@ fn push_entry(
     let (size, alloc) = if is_dir { (0, 0) } else { (end_of_file.max(0) as u64, allocation.max(0) as u64) };
     let key = (is_dir && !link).then(|| Box::<[u16]>::from(name));
     batch.push(name_start, size, alloc, filetime_to_unix(last_write), if is_dir { 0 } else { id }, fl, key);
-}
-
-/// Escribe el nombre UTF-16 como UTF-8. Si contiene surrogates sueltos
-/// (nombres inválidos pero posibles en NTFS) se usa la codificación de `OsStr`.
-fn push_name(out: &mut Vec<u8>, name: &[u16]) {
-    if name.iter().all(|&c| c < 0x80) {
-        out.extend(name.iter().map(|&c| c as u8));
-        return;
-    }
-    let start = out.len();
-    for ch in char::decode_utf16(name.iter().copied()) {
-        match ch {
-            Ok(c) => {
-                let mut tmp = [0u8; 4];
-                out.extend_from_slice(c.encode_utf8(&mut tmp).as_bytes());
-            }
-            Err(_) => {
-                out.truncate(start);
-                out.extend_from_slice(OsString::from_wide(name).as_encoded_bytes());
-                return;
-            }
-        }
-    }
-}
-
-fn filetime_to_unix(ft: i64) -> i64 {
-    if ft <= FILETIME_UNIX_DIFF { 0 } else { (ft - FILETIME_UNIX_DIFF) / 10_000_000 }
-}
-
-/// Ruta en formato `\\?\` terminada en NUL (evita el límite de 260 caracteres).
-fn verbatim(path: &Path) -> Vec<u16> {
-    let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
-    let starts = |prefix: &str| {
-        let p: Vec<u16> = prefix.encode_utf16().collect();
-        wide.starts_with(&p)
-    };
-    let mut out = Vec::with_capacity(wide.len() + 9);
-    if starts(r"\\?\") || starts(r"\\.\") {
-        out.extend_from_slice(&wide);
-    } else if starts(r"\\") {
-        out.extend(r"\\?\UNC\".encode_utf16());
-        out.extend_from_slice(&wide[2..]);
-    } else {
-        out.extend(r"\\?\".encode_utf16());
-        out.extend_from_slice(&wide);
-    }
-    out.push(0);
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().collect()
-    }
-
-    #[test]
-    fn nombres_utf16_a_utf8() {
-        for s in ["simple.txt", "ñandú.png", "日本語", "emoji 😀.mp4"] {
-            let mut out = Vec::new();
-            push_name(&mut out, &wide(s));
-            assert_eq!(out, s.as_bytes());
-        }
-    }
-
-    #[test]
-    fn surrogate_suelto_se_conserva() {
-        let raw = [b'a' as u16, 0xD800, b'b' as u16];
-        let mut out = Vec::new();
-        push_name(&mut out, &raw);
-        // SAFETY: los bytes salen de as_encoded_bytes.
-        let os = unsafe { std::ffi::OsStr::from_encoded_bytes_unchecked(&out) };
-        assert_eq!(os.encode_wide().collect::<Vec<_>>(), raw);
-    }
-
-    #[test]
-    fn rutas_verbatim() {
-        let s = |p: &str| String::from_utf16(&verbatim(Path::new(p))[..]).unwrap();
-        assert_eq!(s(r"C:\Users"), "\\\\?\\C:\\Users\0");
-        assert_eq!(s(r"\\srv\share\x"), "\\\\?\\UNC\\srv\\share\\x\0");
-        assert_eq!(s(r"\\?\D:\"), "\\\\?\\D:\\\0");
-    }
-
-    #[test]
-    fn fechas_filetime() {
-        assert_eq!(filetime_to_unix(0), 0);
-        assert_eq!(filetime_to_unix(FILETIME_UNIX_DIFF + 10_000_000), 1);
-    }
 }

@@ -3,6 +3,7 @@
 mod ui;
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -60,8 +61,13 @@ enum MetricArg {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum EngineArg {
+    /// MFT si es una unidad NTFS completa y eres administrador; si no, nativo
     Auto,
+    /// Lee la tabla maestra de NTFS (el más rápido; requiere administrador)
+    Mft,
+    /// API nativa de Windows
     Nativo,
+    /// Biblioteca estándar (lento; para comparar)
     Portable,
 }
 
@@ -91,6 +97,9 @@ enum Command {
     Abrir { ruta: PathBuf },
     /// Muestra las unidades y los permisos
     Info,
+    /// Compara los motores de escaneo sobre la misma ruta (diagnóstico)
+    #[command(hide = true)]
+    Comparar(RutaArgs),
 }
 
 #[derive(Args)]
@@ -196,6 +205,7 @@ fn main() -> ExitCode {
         Command::Papelera(a) => ctx.papelera(a),
         Command::Abrir { ruta } => actions::reveal_in_explorer(ruta).map_err(Into::into),
         Command::Info => ctx.info(),
+        Command::Comparar(a) => ctx.comparar(a),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -228,16 +238,19 @@ impl Ctx<'_> {
 
     /// Escanea mostrando el progreso.
     fn scan(&self, ruta: &RutaArgs, quiet: bool) -> Result<Tree, Box<dyn std::error::Error>> {
-        let root = ruta.ruta.clone().unwrap_or_else(default_root);
-        let opts = ScanOptions {
-            threads: self.global.hilos,
-            dedupe_hardlinks: !self.global.contar_enlaces_duros,
-            engine: match self.global.motor {
-                EngineArg::Auto => Engine::Auto,
-                EngineArg::Nativo => Engine::Native,
-                EngineArg::Portable => Engine::Portable,
-            },
+        let engine = match self.global.motor {
+            EngineArg::Auto => Engine::Auto,
+            EngineArg::Mft => Engine::Mft,
+            EngineArg::Nativo => Engine::Native,
+            EngineArg::Portable => Engine::Portable,
         };
+        self.scan_with(ruta, quiet, engine)
+    }
+
+    fn scan_with(&self, ruta: &RutaArgs, quiet: bool, engine: Engine) -> Result<Tree, Box<dyn std::error::Error>> {
+        let root = ruta.ruta.clone().unwrap_or_else(default_root);
+        let opts =
+            ScanOptions { threads: self.global.hilos, dedupe_hardlinks: !self.global.contar_enlaces_duros, engine };
         let progress = ScanProgress::new();
         let show = !quiet && !self.global.silencioso && io::IsTerminal::is_terminal(&io::stderr());
         let done = AtomicBool::new(false);
@@ -258,14 +271,18 @@ impl Ctx<'_> {
         let s = tree.stats();
         println!("{} {}", st.title("itsukiManager"), st.bold(&tree.root_path().display().to_string()));
         println!(
-            "  {} en disco · {} de datos · {} archivos · {} carpetas · {} · {} hilos",
+            "  {} en disco · {} de datos · {} archivos · {} carpetas · {} · motor {} · {} hilos",
             st.bold(&size(root.alloc)),
             size(root.size),
             count(s.files),
             count(s.dirs),
             format::seconds(s.elapsed),
+            s.engine,
             s.threads
         );
+        if let Some(e) = &s.mft_error {
+            println!("  {}", st.dim(&format!("No se pudo usar el motor MFT ({e}); se usó el nativo.")));
+        }
         if let Some(vol) = system::volume_of(tree.root_path()) {
             if same_path(&vol.root, tree.root_path()) {
                 let missing = vol.used().saturating_sub(root.alloc);
@@ -289,7 +306,11 @@ impl Ctx<'_> {
             );
         }
         if s.denied > 0 {
-            let hint = if s.elevated { "" } else { " (ejecuta como administrador para incluirlas)" };
+            let hint = if s.elevated {
+                ""
+            } else {
+                " (como administrador se leen todas y se usa el motor MFT, mucho más rápido)"
+            };
             println!("  {}", st.yellow(&format!("⚠ {} carpetas sin acceso{hint}", count(s.denied))));
         }
         println!();
@@ -625,6 +646,93 @@ impl Ctx<'_> {
         Ok(())
     }
 
+    fn comparar(&self, a: &RutaArgs) -> Res {
+        let st = self.style;
+        let mut engines = Vec::new();
+        if system::is_elevated() {
+            engines.push(("mft", Engine::Mft));
+        }
+        engines.push(("nativo", Engine::Native));
+        engines.push(("portable", Engine::Portable));
+        let mut trees = Vec::new();
+        for (name, engine) in engines {
+            match self.scan_with(a, false, engine) {
+                Ok(t) => trees.push((name, t)),
+                Err(e) => println!("  {} motor {name}: {e}", st.yellow("⚠")),
+            }
+        }
+        let Some((ref_name, reference)) = trees.first() else {
+            return Err("ningún motor pudo escanear la ruta".into());
+        };
+        println!("{} {}\n", st.title("Comparación de motores"), st.bold(&reference.root_path().display().to_string()));
+        let mut t = Table::new(&[
+            ("Motor", false),
+            ("Tiempo", true),
+            ("En disco", true),
+            ("Datos", true),
+            ("Archivos", true),
+            ("Carpetas", true),
+            ("Sin acceso", true),
+            ("Enlaces duros", true),
+        ]);
+        for (name, tree) in &trees {
+            let r = tree.node(ROOT);
+            let s = tree.stats();
+            t.row(vec![
+                Cell::styled(*name, Style::bold),
+                Cell::plain(format::seconds(s.elapsed)),
+                Cell::plain(size(r.alloc)),
+                Cell::plain(size(r.size)),
+                Cell::plain(count(s.files)),
+                Cell::plain(count(s.dirs)),
+                Cell::plain(count(s.denied)),
+                Cell::plain(count(s.hardlinks)),
+            ]);
+        }
+        t.print(st);
+
+        for (name, other) in trees.iter().skip(1) {
+            let index: HashMap<String, NodeId> =
+                other.children(ROOT).map(|c| (other.name_lossy(c).to_lowercase(), c)).collect();
+            let mut seen = Vec::new();
+            let mut rows: Vec<(i128, String, u64, u64)> = Vec::new();
+            for c in reference.children(ROOT) {
+                let key = reference.name_lossy(c).to_lowercase();
+                let x = reference.node(c).alloc;
+                let y = index.get(&key).map_or(0, |&o| other.node(o).alloc);
+                seen.push(key);
+                rows.push((i128::from(x) - i128::from(y), reference.name_lossy(c).into_owned(), x, y));
+            }
+            for c in other.children(ROOT) {
+                if !seen.contains(&other.name_lossy(c).to_lowercase()) {
+                    let y = other.node(c).alloc;
+                    rows.push((-i128::from(y), other.name_lossy(c).into_owned(), 0, y));
+                }
+            }
+            rows.retain(|r| r.0.unsigned_abs() >= 1 << 20);
+            rows.sort_by_key(|r| std::cmp::Reverse(r.0.unsigned_abs()));
+            println!(
+                "\n  {}",
+                st.title(&format!("Diferencias {ref_name} − {name} por carpeta de primer nivel (≥ 1 MB)"))
+            );
+            if rows.is_empty() {
+                println!("  Ninguna: los dos motores coinciden.");
+                continue;
+            }
+            let mut d = Table::new(&[(ref_name, true), (name, true), ("Diferencia", true), ("Elemento", false)]);
+            for (diff, label, x, y) in rows.into_iter().take(20) {
+                d.row(vec![
+                    Cell::plain(size(x)),
+                    Cell::plain(size(y)),
+                    Cell::styled(signed_size(diff), Style::bold),
+                    Cell::plain(label),
+                ]);
+            }
+            d.print(st);
+        }
+        Ok(())
+    }
+
     fn info(&self) -> Res {
         let st = self.style;
         println!("{}", st.title("itsukiManager"));
@@ -637,7 +745,15 @@ impl Ctx<'_> {
                 st.yellow("usuario normal (algunas carpetas del sistema no se pueden leer)")
             }
         );
-        println!("  Hilos de escaneo por defecto: {}\n", itsuki_core::scan::default_threads());
+        println!("  Hilos de escaneo por defecto: {}", itsuki_core::scan::default_threads());
+        println!(
+            "  Motor MFT: {}\n",
+            if elevated {
+                st.green("disponible (escaneo de unidades NTFS completas en segundos)")
+            } else {
+                st.yellow("necesita administrador")
+            }
+        );
         let mut t = Table::new(&[
             ("Unidad", false),
             ("Tipo", false),
@@ -688,6 +804,11 @@ fn same_path(a: &Path, b: &Path) -> bool {
     norm(a) == norm(b)
 }
 
+/// Diferencia con signo: `+1,50 GB` o `-200 MB`.
+fn signed_size(d: i128) -> String {
+    let abs = size(d.unsigned_abs().min(u128::from(u64::MAX)) as u64);
+    if d < 0 { format!("-{abs}") } else { format!("+{abs}") }
+}
 fn ratio(part: u64, total: u64) -> f64 {
     if total == 0 { 0.0 } else { part as f64 / total as f64 }
 }

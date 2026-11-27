@@ -97,13 +97,15 @@ pub struct ScanStats {
     pub denied: u64,
     /// Enlaces duros repetidos que no se sumaron dos veces.
     pub hardlinks: u64,
-    /// Motor usado: `"nativo"` o `"portable"`.
+    /// Motor usado: `"mft"`, `"nativo"` o `"portable"`.
     pub engine: &'static str,
     pub threads: usize,
     /// El proceso tenía permisos de administrador.
     pub elevated: bool,
     /// Se activó el privilegio de copia de seguridad (lee carpetas protegidas).
     pub backup_privilege: bool,
+    /// Por qué no se pudo usar el motor MFT en modo automático.
+    pub mft_error: Option<String>,
 }
 
 /// Resultado de un escaneo.
@@ -129,11 +131,14 @@ impl Tree {
         stats.files = nodes.iter().filter(|n| !n.is_dir()).count() as u64;
         stats.dirs = nodes.len() as u64 - stats.files;
         stats.denied = denied.len() as u64;
+        let mut perf = crate::scan::util::Perf::new("árbol");
         let mut tree = Tree { nodes, names, root_path, denied, stats };
         if let Some(ids) = ids {
             tree.stats.hardlinks = tree.dedupe_hardlinks(&ids);
+            perf.mark("enlaces duros");
         }
         tree.aggregate();
+        perf.mark("sumar tamaños");
         tree
     }
 
@@ -287,8 +292,11 @@ impl Tree {
             if group.len() < 2 {
                 continue;
             }
-            let keeper =
-                group.iter().map(|&(_, id)| (self.path(id), id)).min().map(|(_, id)| id).expect("grupo no vacío");
+            let keeper = group
+                .iter()
+                .map(|&(_, id)| id)
+                .min_by(|&a, &b| self.cmp_paths(a, b).then(a.cmp(&b)))
+                .expect("grupo no vacío");
             let size = group.iter().map(|&(_, id)| self.nodes[id as usize].size).max().unwrap_or(0);
             let alloc = group.iter().map(|&(_, id)| self.nodes[id as usize].alloc).max().unwrap_or(0);
             for &(_, id) in group {
@@ -305,14 +313,31 @@ impl Tree {
         repeated
     }
 
+    /// Compara dos rutas componente a componente, sin construirlas (mismo
+    /// orden que `Path::cmp`).
+    fn cmp_paths(&self, a: NodeId, b: NodeId) -> std::cmp::Ordering {
+        let chain = |mut id: NodeId| {
+            let mut v = Vec::with_capacity(16);
+            while id != ROOT {
+                v.push(id);
+                id = self.nodes[id as usize].parent;
+            }
+            v.reverse();
+            v
+        };
+        let (ca, cb) = (chain(a), chain(b));
+        for (&x, &y) in ca.iter().zip(&cb) {
+            match self.name(x).cmp(self.name(y)) {
+                std::cmp::Ordering::Equal => {}
+                other => return other,
+            }
+        }
+        ca.len().cmp(&cb.len())
+    }
     /// Suma tamaños y archivos de abajo hacia arriba.
     fn aggregate(&mut self) {
+        // Las carpetas parten de su propio espacio (índices de NTFS en el motor MFT, 0 en los demás).
         let nodes = &mut self.nodes;
-        for n in nodes.iter_mut().filter(|n| n.is_dir()) {
-            n.size = 0;
-            n.alloc = 0;
-            n.files = 0;
-        }
         for i in (1..nodes.len()).rev() {
             let n = nodes[i];
             let (size, alloc, files) = if n.is_dir() {
