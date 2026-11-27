@@ -176,8 +176,11 @@ npm run tauri dev      # abre la app con recarga en caliente
 npm run tauri build    # genera el instalador (NSIS)
 ```
 
-- La interfaz se escala con la ventana manteniendo las proporciones del diseño
-  (1 rem = 16 px a 1672 × 941).
+- La ventana tiene un tamaño fijo de 1080 × 720: no se redimensiona ni se maximiza. Si la
+  pantalla es más pequeña (por ejemplo, un portátil con escalado alto), se reduce sin perder la
+  proporción.
+- El diseño se hizo a 1672 × 941 (1 rem = 16 px); en la ventana fija la escala la marca el ancho
+  y la altura sobrante se reparte entre los espacios verticales.
 - La pantalla de inicio muestra datos reales: la unidad del sistema, el reparto del
   espacio, las carpetas más grandes y lo que se puede liberar.
 - Las imágenes de la mascota están inspiradas en Itsuki Nakano, personaje de terceros:
