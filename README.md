@@ -236,3 +236,7 @@ permisos se omite.
 3. ~~Limpieza inteligente y duplicados~~
 4. ~~Historial de escaneos, crecimiento por carpeta y avisos de disco lleno~~
 5. Interfaz gráfica (Tauri + React) con treemap interactivo
+
+## Licencia
+
+ItsukiManager es de código abierto con licencia [MIT](LICENSE).
