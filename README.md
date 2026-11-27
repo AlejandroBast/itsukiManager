@@ -1,4 +1,10 @@
-# itsukiManager
+<h1 align="center">
+  <img src="app/src-tauri/icons/icon.png" alt="" width="72" height="72" align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
+    <img src="docs/brand/logo-light.svg" alt="ItsukiManager" height="72" align="center">
+  </picture>
+</h1>
 
 Gestor de almacenamiento para Windows, escrito en Rust. Escanea discos completos
 en segundos y muestra qué ocupa espacio (carpetas de más de 1 GB, archivos
