@@ -6,7 +6,7 @@ grandes, tipos de archivo) para liberar espacio con seguridad.
 
 > **Estado:** fases 1 a 4 listas: motores de escaneo nativo y MFT, limpieza
 > inteligente, duplicados, historial con avisos y línea de comandos `itsuki`. En curso:
-> la interfaz de escritorio (pantalla de inicio lista, el resto de secciones en diseño).
+> la interfaz de escritorio (inicio, análisis, archivos grandes, duplicados y limpieza listos).
 
 ## Qué hace
 
@@ -183,6 +183,17 @@ npm run tauri build    # genera el instalador (NSIS)
   y la altura sobrante se reparte entre los espacios verticales.
 - La pantalla de inicio muestra datos reales: la unidad del sistema, el reparto del
   espacio, las carpetas más grandes y lo que se puede liberar.
+- Cada sección funciona con botones, sin terminal. El escaneo de la unidad se hace una vez y
+  lo reutilizan todas las secciones; los trabajos largos muestran el progreso y se pueden cancelar.
+  - **Analizar disco**: árbol de las carpetas de 500 MB, 1, 5 o 10 GB o más de cada unidad.
+  - **Archivos grandes**: los 50, 100 o 200 archivos que más ocupan.
+  - **Duplicados**: compara el contenido en las carpetas personales o en una unidad y deja una
+    sola copia (la más antigua).
+  - **Limpieza**: temporales y cachés por categoría y nivel de seguridad; lo seguro viene marcado.
+    Las cachés de apps abiertas y lo que necesita administrador se saltan.
+- Todo lo que borra pide confirmación. Desde las listas se envía a la Papelera, y las rutas
+  protegidas (Windows, programas, carpetas base del usuario) se rechazan. La limpieza borra de
+  forma permanente salvo que se marque «Enviar a la Papelera».
 - Las imágenes de la mascota están inspiradas en Itsuki Nakano, personaje de terceros:
   el paquete de assets no concede licencia sobre el personaje, así que conviene revisar
   los derechos antes de distribuir la app públicamente.
