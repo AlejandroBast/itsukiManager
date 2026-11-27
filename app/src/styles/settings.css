@@ -224,6 +224,53 @@
   margin-top: 0.3rem;
 }
 
+.update-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 34rem;
+  padding: 0.8rem 1.1rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: rgba(0, 0, 0, 0.16);
+  font-size: 1.1rem;
+}
+
+.update-box .btn {
+  flex: none;
+  white-space: nowrap;
+}
+
+.update-box.column {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.6rem;
+}
+
+.update-text {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+
+.update-text strong {
+  color: var(--text);
+}
+
+.update-ok {
+  width: 1.2rem;
+  height: 1.2rem;
+  color: var(--success);
+}
+
+.update-meter > span {
+  transition: width 0.2s linear;
+}
+
 .about-facts {
   display: flex;
   gap: 3rem;

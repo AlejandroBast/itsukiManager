@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::cleanup::JunkState;
 use crate::home::HomeSummary;
 use crate::settings::Settings;
+use crate::updater::UpdateInfo;
 
 /// Mensaje de error cuando el usuario cancela (la interfaz no lo muestra como fallo).
 pub const CANCELLED: &str = "cancelado";
@@ -34,6 +35,7 @@ pub struct AppState {
     pub home: Mutex<Option<HomeSummary>>,
     pub junk: Mutex<Option<JunkState>>,
     pub settings: Mutex<Settings>,
+    pub update: Mutex<Option<UpdateInfo>>,
 }
 
 /// Bloquea sin fallar si otro hilo se interrumpió con el candado tomado.

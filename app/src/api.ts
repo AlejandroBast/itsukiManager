@@ -187,6 +187,23 @@ export interface AboutInfo {
   drives: DriveEngine[];
 }
 
+export interface UpdateInfo {
+  current: string;
+  latest: string;
+  available: boolean;
+  /** Página de la release en GitHub. */
+  url: string;
+  /** Tamaño de la descarga (instalador o zip portable). */
+  size: number;
+  portable: boolean;
+  checkedAt: number;
+}
+
+export interface UpdateProgress {
+  done: number;
+  total: number;
+}
+
 /** Error que devuelve el núcleo cuando el usuario cancela. */
 export const CANCELLED = "cancelado";
 
@@ -216,6 +233,10 @@ export const api = {
   setSettings: (settings: Settings) => invoke<Settings>("set_settings", { settings }),
   aboutInfo: () => invoke<AboutInfo>("about_info"),
   openRepo: () => invoke<void>("open_repo"),
+  updateStatus: (force: boolean) => invoke<UpdateInfo>("update_status", { force }),
+  installUpdate: () => invoke<void>("install_update"),
+  openReleasePage: () => invoke<void>("open_release_page"),
+  onUpdateProgress: (handler: (p: UpdateProgress) => void) => on<UpdateProgress>("update-progress", handler),
   onScanProgress: (handler: (p: ScanProgress) => void) => on<ScanProgress>("scan-progress", handler),
   onDupesProgress: (handler: (p: ScanProgress) => void) => on<ScanProgress>("dupes-progress", handler),
   onCleanProgress: (handler: (p: CleanProgress) => void) => on<CleanProgress>("clean-progress", handler),
