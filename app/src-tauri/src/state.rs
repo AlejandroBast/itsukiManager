@@ -8,12 +8,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use itsuki_core::{DupProgress, ScanError, ScanOptions, ScanProgress, Tree, scan};
+use itsuki_core::{DupProgress, ScanError, ScanProgress, Tree, scan};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::cleanup::JunkState;
 use crate::home::HomeSummary;
+use crate::settings::Settings;
 
 /// Mensaje de error cuando el usuario cancela (la interfaz no lo muestra como fallo).
 pub const CANCELLED: &str = "cancelado";
@@ -32,6 +33,7 @@ pub struct AppState {
     job: Mutex<Option<Job>>,
     pub home: Mutex<Option<HomeSummary>>,
     pub junk: Mutex<Option<JunkState>>,
+    pub settings: Mutex<Settings>,
 }
 
 /// Bloquea sin fallar si otro hilo se interrumpió con el candado tomado.
@@ -114,6 +116,7 @@ impl AppState {
                 return Ok(t.clone());
             }
         }
+        let options = lock(&self.settings).scan_options();
         let progress = Arc::new(ScanProgress::new());
         *lock(&self.job) = Some(Job::Scan(progress.clone()));
         let reader = progress.clone();
@@ -124,7 +127,7 @@ impl AppState {
                 let p = reader.snapshot();
                 ProgressEvent { files: p.files, bytes: p.bytes }
             },
-            || scan(root, &ScanOptions::default(), &progress),
+            || scan(root, &options, &progress),
         );
         *lock(&self.job) = None;
         let tree = Arc::new(result.map_err(|e| match e {
@@ -151,6 +154,13 @@ impl AppState {
     pub fn invalidate(&self, path: &Path) {
         let p = key_of(path);
         lock(&self.trees).retain(|k, _| !within(&p, k) && !within(k, &p));
+        *lock(&self.home) = None;
+        *lock(&self.junk) = None;
+    }
+
+    /// Olvida todo lo escaneado (tras cambiar cómo se escanea).
+    pub fn forget_scans(&self) {
+        lock(&self.trees).clear();
         *lock(&self.home) = None;
         *lock(&self.junk) = None;
     }

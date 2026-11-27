@@ -23,12 +23,15 @@ function defaultSelection(view: JunkView): Set<number> {
 }
 
 /** «Limpieza»: temporales, cachés y restos que se pueden borrar con seguridad. */
-export function CleanupView({ onChanged }: { onChanged: () => void }) {
+export function CleanupView(props: { defaultToRecycle: boolean; defaultIncludeOpen: boolean; onChanged: () => void }) {
+  const { defaultToRecycle, defaultIncludeOpen, onChanged } = props;
   const [data, setData] = useState<JunkView | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [toRecycle, setToRecycle] = useState(false);
-  const [includeOpen, setIncludeOpen] = useState(false);
+  const [toRecycle, setToRecycle] = useState(defaultToRecycle);
+  const [includeOpen, setIncludeOpen] = useState(defaultIncludeOpen);
+  useEffect(() => setToRecycle(defaultToRecycle), [defaultToRecycle]);
+  useEffect(() => setIncludeOpen(defaultIncludeOpen), [defaultIncludeOpen]);
   const [confirm, setConfirm] = useState(false);
   const [cleaning, setCleaning] = useState<CleanProgress | null>(null);
   const [result, setResult] = useState<CleanResult | null>(null);

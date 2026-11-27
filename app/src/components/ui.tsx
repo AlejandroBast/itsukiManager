@@ -126,7 +126,24 @@ export function Checkbox(props: {
   );
 }
 
-export type Tone = "safe" | "regenerable" | "review" | "advice" | "warn" | "info";
+/** Interruptor para ajustes que se activan o desactivan. */
+export function Switch(props: { checked: boolean; onChange: (checked: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={props.checked}
+      aria-label={props.label}
+      className={props.checked ? "switch on" : "switch"}
+      disabled={props.disabled}
+      onClick={() => props.onChange(!props.checked)}
+    >
+      <span className="switch-knob" aria-hidden="true" />
+    </button>
+  );
+}
+
+export type Tone ="safe" | "regenerable" | "review" | "advice" | "warn" | "info";
 
 export function Badge({ tone, children, title }: { tone: Tone; children: ReactNode; title?: string }) {
   return (

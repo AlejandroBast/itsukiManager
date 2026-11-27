@@ -1,0 +1,329 @@
+/*
+  Configuración y Acerca de. Mismo sistema que el resto: tarjetas, píldoras y paleta.
+*/
+
+/* ---------- Interruptor ---------- */
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 3.6rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition:
+    background 0.2s var(--ease),
+    border-color 0.2s var(--ease);
+}
+
+.switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 0.25rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--muted);
+  transform: translateY(-50%);
+  transition:
+    transform 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+
+.switch.on {
+  border-color: rgba(255, 150, 160, 0.35);
+  background: linear-gradient(90deg, #b2465a 0%, #dc5d69 100%);
+}
+
+.switch.on .switch-knob {
+  background: #fff;
+  transform: translate(1.6rem, -50%);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+.switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ---------- Configuración ---------- */
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.4rem;
+}
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  padding: 1.6rem;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  padding-bottom: 1.3rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.settings-head p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+.settings-icon {
+  display: grid;
+  flex: none;
+  width: 3.4rem;
+  height: 3.4rem;
+  place-items: center;
+  border-radius: 0.9rem;
+}
+
+.settings-icon .icon {
+  width: 1.8rem;
+  height: 1.8rem;
+}
+
+.settings-icon.violet {
+  background: rgba(150, 113, 223, 0.18);
+  color: #c2abf2;
+}
+
+.settings-icon.coral {
+  background: rgba(255, 120, 136, 0.16);
+  color: var(--coral);
+}
+
+.settings-icon.blue {
+  background: rgba(84, 136, 232, 0.18);
+  color: #9dbcf5;
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.3rem 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.setting:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.setting.inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.4rem;
+}
+
+.setting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.setting-text strong {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.setting-text span {
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.setting-control {
+  display: flex;
+}
+
+.setting-control .select,
+.setting-control .select select,
+.setting-control .segmented {
+  width: 100%;
+}
+
+.setting-control .seg {
+  flex: 1;
+  padding: 0 0.6rem;
+}
+
+.settings-note {
+  margin: 1.2rem 0 0;
+  padding: 0.9rem 1.1rem;
+  border-radius: 0.7rem;
+  background: rgba(0, 0, 0, 0.16);
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.4;
+}
+
+/* ---------- Acerca de ---------- */
+
+.about-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 1.4rem;
+  min-height: 0;
+}
+
+.about-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+  padding: 2.2rem 2.4rem;
+  text-align: center;
+}
+
+.about-hero img {
+  height: 15rem;
+}
+
+.about-name {
+  font-size: 2.8rem;
+}
+
+.about-hero p {
+  max-width: 34rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1.5;
+}
+
+.about-actions {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 0.3rem;
+}
+
+.about-facts {
+  display: flex;
+  gap: 3rem;
+  margin: auto 0 0;
+  padding-top: 1.4rem;
+}
+
+.about-facts dt,
+.about-list dt {
+  color: var(--muted);
+  font-size: 1.02rem;
+}
+
+.about-facts dd {
+  margin: 0.25rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.about-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  min-height: 0;
+}
+
+.about-card {
+  padding: 1.6rem;
+}
+
+.about-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0.8rem 0 0;
+}
+
+.about-list > div {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.about-list dd {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.12rem;
+}
+
+.about-path span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.about-sub {
+  margin: 1.3rem 0 0.6rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.about-drives {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.about-drive {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 1rem;
+  border-radius: 0.7rem;
+  background: rgba(0, 0, 0, 0.14);
+  font-size: 1.1rem;
+}
+
+.about-drive .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drive-letter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+
+.drive-letter .icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  color: var(--coral);
+}
+
+.about-text {
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
