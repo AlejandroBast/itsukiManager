@@ -176,11 +176,9 @@ npm run tauri dev      # abre la app con recarga en caliente
 npm run tauri build    # genera el instalador (NSIS)
 ```
 
-- La ventana tiene un tamaño fijo de 1080 × 720: no se redimensiona ni se maximiza. Si la
-  pantalla es más pequeña (por ejemplo, un portátil con escalado alto), se reduce sin perder la
-  proporción.
-- El diseño se hizo a 1672 × 941 (1 rem = 16 px); en la ventana fija la escala la marca el ancho
-  y la altura sobrante se reparte entre los espacios verticales.
+- La ventana tiene un tamaño fijo de 1672 × 941, el del diseño (1 rem = 16 px): no se
+  redimensiona ni se maximiza. Si la pantalla es más pequeña (por ejemplo, un portátil con
+  escalado alto), se reduce sin perder la proporción.
 - La pantalla de inicio muestra datos reales: la unidad del sistema, el reparto del
   espacio, las carpetas más grandes y lo que se puede liberar.
 - Cada sección funciona con botones, sin terminal. El escaneo de la unidad se hace una vez y
