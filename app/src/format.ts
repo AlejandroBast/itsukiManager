@@ -23,3 +23,22 @@ export function formatPercent(part: number, total: number, digits = 1): string {
 export function formatCount(n: number): string {
   return n.toLocaleString("es-ES");
 }
+
+/** Fecha corta a partir de segundos Unix: `12 mar 2025` (vacío si se desconoce). */
+export function formatDate(unixSeconds: number): string {
+  if (!unixSeconds) return "—";
+  return new Date(unixSeconds * 1000).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** Duración legible: `850 ms`, `6,2 s`, `1 min 5 s`. */
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toLocaleString("es-ES", { maximumFractionDigits: 1 })} s`;
+  return `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
+}
+
+/** Letra de la unidad sin la barra final: `C:`. */
+export function driveLabel(root: string): string {
+  return root.replace(/\\+$/, "");
+}
