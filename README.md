@@ -5,8 +5,8 @@ en segundos y muestra qué ocupa espacio (carpetas de más de 1 GB, archivos
 grandes, tipos de archivo) para liberar espacio con seguridad.
 
 > **Estado:** fases 1 a 4 listas: motores de escaneo nativo y MFT, limpieza
-> inteligente, duplicados, historial con avisos y línea de comandos `itsuki`. La
-> siguiente fase es la interfaz gráfica.
+> inteligente, duplicados, historial con avisos y línea de comandos `itsuki`. En curso:
+> la interfaz de escritorio (pantalla de inicio lista, el resto de secciones en diseño).
 
 ## Qué hace
 
@@ -163,6 +163,27 @@ escanear una unidad completa (o fuérzalo con `--motor mft`).
 Opciones comunes: `--metrica disco|datos`, `--hilos N`, `--motor auto|mft|nativo|portable`,
 `--contar-enlaces-duros`, `-q` (sin progreso). Ayuda completa: `itsuki --help`.
 
+## Interfaz de escritorio
+
+La app está en `app/`: React + TypeScript con Vite para la interfaz y Tauri 2
+(`app/src-tauri`) como capa fina que llama al núcleo. El diseño de referencia está en
+[`docs/ui/mockup.png`](docs/ui/mockup.png).
+
+```powershell
+cd app
+npm install
+npm run tauri dev      # abre la app con recarga en caliente
+npm run tauri build    # genera el instalador (NSIS)
+```
+
+- La interfaz se escala con la ventana manteniendo las proporciones del diseño
+  (1 rem = 16 px a 1672 × 941).
+- La pantalla de inicio muestra datos reales: la unidad del sistema, el reparto del
+  espacio, las carpetas más grandes y lo que se puede liberar.
+- Las imágenes de la mascota están inspiradas en Itsuki Nakano, personaje de terceros:
+  el paquete de assets no concede licencia sobre el personaje, así que conviene revisar
+  los derechos antes de distribuir la app públicamente.
+
 ## Compilar y probar
 
 Requisitos: [Rust](https://rustup.rs) estable y Visual Studio Build Tools (C++).
@@ -188,6 +209,8 @@ permisos se omite.
 |---|---|
 | `crates/itsuki-core` | Núcleo reutilizable: escaneo (`scan`, con los motores `mft`, `native` y `portable`), árbol (`tree`), consultas (`query`), tipos (`types`), limpieza (`clean`), duplicados (`dupes`), historial (`history`), avisos (`alerts`), acciones seguras (`actions`), sistema (`system`) |
 | `crates/itsuki-cli` | Programa de línea de comandos `itsuki` |
+| `app` | Interfaz de escritorio (React + TypeScript + Vite) y `app/src-tauri` (Tauri 2) |
+| `docs/ui` | Mockup de referencia de la interfaz |
 
 ## Hoja de ruta
 
