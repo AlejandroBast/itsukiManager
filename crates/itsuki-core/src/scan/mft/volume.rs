@@ -6,7 +6,9 @@ use std::alloc::{Layout, alloc_zeroed, dealloc};
 use std::io;
 use std::path::Path;
 use std::ptr;
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::sync::mpsc::{channel, sync_channel};
+use std::time::{Duration, Instant};
 
 use rayon::prelude::*;
 use windows_sys::Win32::Foundation::GENERIC_READ;
@@ -24,13 +26,15 @@ use super::parse::{
     parse_records,
 };
 use crate::scan::ScanProgress;
-use crate::scan::util::{Handle, verbatim};
+use crate::scan::util::{Handle, Perf, verbatim};
 use crate::scan::walk::WalkOutput;
 
 /// Bytes de MFT que se leen por bloque.
 const CHUNK: usize = 4 << 20;
 /// Registros por tarea de análisis.
 const RECORDS_PER_TASK: usize = 1024;
+/// Tamaño mínimo de lectura al que se baja si el controlador rechaza las grandes.
+const MIN_IO: usize = 64 << 10;
 
 /// Geometría del volumen NTFS.
 struct Geometry {
@@ -39,6 +43,14 @@ struct Geometry {
     record: u64,
     mft_start_lcn: u64,
     mft_valid: u64,
+}
+
+/// Volumen abierto para lectura directa.
+struct Volume {
+    handle: Handle,
+    /// Tamaño máximo de cada lectura. Algunos controladores (sobre todo de
+    /// discos SATA) rechazan lecturas grandes: entonces se va reduciendo.
+    max_io: AtomicUsize,
 }
 
 /// Búfer alineado a 4 KiB (requisito de la lectura sin caché).
@@ -78,6 +90,11 @@ fn invalid(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, format!("MFT: {msg}"))
 }
 
+/// Añade al error el paso en el que ocurrió.
+fn step(what: &'static str) -> impl FnOnce(io::Error) -> io::Error {
+    move |e| io::Error::new(e.kind(), format!("{what}: {e}"))
+}
+
 /// Escanea `root` leyendo directamente la MFT de su volumen.
 pub(crate) fn scan(
     root: &Path,
@@ -85,16 +102,17 @@ pub(crate) fn scan(
     progress: &ScanProgress,
     keep_ids: bool,
 ) -> io::Result<WalkOutput> {
+    let mut perf = Perf::new("mft");
     let root_w = verbatim(root);
     let mut mount = vec![0u16; 1024];
     // SAFETY: búferes válidos con sus tamaños.
     if unsafe { GetVolumePathNameW(root_w.as_ptr(), mount.as_mut_ptr(), mount.len() as u32) } == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(step("ruta del volumen")(io::Error::last_os_error()));
     }
     let mut device = vec![0u16; 64];
     // SAFETY: `mount` termina en NUL; el tamaño coincide con el búfer.
     if unsafe { GetVolumeNameForVolumeMountPointW(mount.as_ptr(), device.as_mut_ptr(), device.len() as u32) } == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(step("nombre del volumen")(io::Error::last_os_error()));
     }
     // "\\?\Volume{...}\" -> "\\?\Volume{...}" (sin la barra final se abre el volumen).
     let end = device.iter().position(|&c| c == 0).unwrap_or(device.len());
@@ -103,7 +121,7 @@ pub(crate) fn scan(
     }
 
     // SAFETY: `device` termina en NUL.
-    let volume = Handle::from_create(unsafe {
+    let handle = Handle::from_create(unsafe {
         CreateFileW(
             device.as_ptr(),
             GENERIC_READ,
@@ -113,11 +131,14 @@ pub(crate) fn scan(
             FILE_FLAG_NO_BUFFERING,
             ptr::null_mut(),
         )
-    })?;
+    })
+    .map_err(step("abrir el volumen"))?;
+    let volume = Volume { handle, max_io: AtomicUsize::new(CHUNK) };
 
-    let geo = geometry(&volume)?;
-    let root_frn = file_reference(&root_w)? & FRN_MASK;
-    let runs = mft_runs(&volume, &geo)?;
+    let geo = geometry(&volume).map_err(step("datos del volumen NTFS"))?;
+    let root_frn = file_reference(&root_w).map_err(step("referencia de la carpeta"))? & FRN_MASK;
+    let runs = mft_runs(&volume, &geo).map_err(step("ubicación de la MFT"))?;
+    perf.mark("abrir volumen y localizar la MFT");
 
     let total_records = (geo.mft_valid / geo.record) as usize;
     if root_frn as usize >= total_records {
@@ -125,23 +146,33 @@ pub(crate) fn scan(
     }
     let mut recs = vec![RecInfo::default(); total_records];
     let mut all = ParseOut::default();
-    read_and_parse(&volume, &geo, &runs, &mut recs, &mut all, pool, progress)?;
+    let (read_time, parse_time) =
+        read_and_parse(&volume, &geo, &runs, &mut recs, &mut all, pool, progress).map_err(step("lectura de la MFT"))?;
+    perf.mark(&format!(
+        "leer y analizar {} registros ({} MB; lectura {:.0} ms, análisis {:.0} ms)",
+        total_records,
+        geo.mft_valid >> 20,
+        read_time.as_secs_f64() * 1000.0,
+        parse_time.as_secs_f64() * 1000.0
+    ));
     if progress.is_cancelled() {
         return Ok(WalkOutput { nodes: Vec::new(), names: Vec::new(), ids: None, denied: Vec::new() });
     }
     apply_extensions(&mut recs, &all.ext);
     let ParseOut { links, names, .. } = all;
-    Ok(build(&recs, &links, names, root_frn as u32, keep_ids))
+    let out = build(&recs, &links, names, root_frn as u32, keep_ids);
+    perf.mark("construir el árbol");
+    Ok(out)
 }
 
 /// Pide a NTFS el tamaño de sector, clúster y registro, y dónde está la MFT.
-fn geometry(volume: &Handle) -> io::Result<Geometry> {
+fn geometry(volume: &Volume) -> io::Result<Geometry> {
     let mut data = NTFS_VOLUME_DATA_BUFFER::default();
     let mut returned = 0u32;
     // SAFETY: búfer de salida válido con su tamaño.
     let ok = unsafe {
         DeviceIoControl(
-            volume.0,
+            volume.handle.0,
             FSCTL_GET_NTFS_VOLUME_DATA,
             ptr::null(),
             0,
@@ -195,8 +226,8 @@ fn file_reference(path_w: &[u16]) -> io::Result<u64> {
     Ok((u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow))
 }
 
-/// Lectura posicionada de `buf.len()` bytes (alineados al sector).
-fn read_at(volume: &Handle, offset: u64, buf: &mut [u8]) -> io::Result<()> {
+/// Una sola llamada a `ReadFile` en la posición `offset`.
+fn read_once(volume: &Volume, offset: u64, buf: &mut [u8]) -> io::Result<()> {
     let mut ov = OVERLAPPED {
         Anonymous: OVERLAPPED_0 {
             Anonymous: OVERLAPPED_0_0 { Offset: offset as u32, OffsetHigh: (offset >> 32) as u32 },
@@ -205,7 +236,7 @@ fn read_at(volume: &Handle, offset: u64, buf: &mut [u8]) -> io::Result<()> {
     };
     let mut read = 0u32;
     // SAFETY: búfer válido; la lectura es síncrona porque el handle no es OVERLAPPED.
-    let ok = unsafe { ReadFile(volume.0, buf.as_mut_ptr(), buf.len() as u32, &mut read, &mut ov) };
+    let ok = unsafe { ReadFile(volume.handle.0, buf.as_mut_ptr(), buf.len() as u32, &mut read, &mut ov) };
     if ok == 0 {
         return Err(io::Error::last_os_error());
     }
@@ -215,8 +246,28 @@ fn read_at(volume: &Handle, offset: u64, buf: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
+/// Lectura posicionada de `buf.len()` bytes (alineados al sector). Si el
+/// controlador rechaza lecturas tan grandes, se repite en trozos más pequeños.
+fn read_at(volume: &Volume, offset: u64, buf: &mut [u8]) -> io::Result<()> {
+    let mut done = 0usize;
+    while done < buf.len() {
+        let max = volume.max_io.load(Relaxed);
+        let len = (buf.len() - done).min(max);
+        let at = offset + done as u64;
+        match read_once(volume, at, &mut buf[done..done + len]) {
+            Ok(()) => done += len,
+            // ERROR_NOT_SUPPORTED, ERROR_INVALID_PARAMETER, ERROR_NO_SYSTEM_RESOURCES, ERROR_INVALID_USER_BUFFER
+            Err(e) if matches!(e.raw_os_error(), Some(50 | 87 | 1450 | 1784)) && len > MIN_IO => {
+                volume.max_io.store((len / 2).max(MIN_IO), Relaxed);
+            }
+            Err(e) => return Err(io::Error::new(e.kind(), format!("{len} bytes en la posición {at}: {e}"))),
+        }
+    }
+    Ok(())
+}
+
 /// Lee los clústeres `vcn..vcn+count` de la MFT (según `runs`) en `buf`.
-fn read_vcns(volume: &Handle, geo: &Geometry, runs: &[Run], vcn: u64, count: u64, buf: &mut [u8]) -> io::Result<()> {
+fn read_vcns(volume: &Volume, geo: &Geometry, runs: &[Run], vcn: u64, count: u64, buf: &mut [u8]) -> io::Result<()> {
     let mut done = 0u64;
     while done < count {
         let cur = vcn + done;
@@ -232,7 +283,7 @@ fn read_vcns(volume: &Handle, geo: &Geometry, runs: &[Run], vcn: u64, count: u64
 }
 
 /// Lee y corrige un registro concreto de la MFT.
-fn read_record(volume: &Handle, geo: &Geometry, runs: &[Run], frn: u64) -> io::Result<Vec<u8>> {
+fn read_record(volume: &Volume, geo: &Geometry, runs: &[Run], frn: u64) -> io::Result<Vec<u8>> {
     let byte = frn * geo.record;
     let first = byte / geo.cluster;
     let last = (byte + geo.record).div_ceil(geo.cluster);
@@ -248,7 +299,7 @@ fn read_record(volume: &Handle, geo: &Geometry, runs: &[Run], frn: u64) -> io::R
 
 /// Tramos de clústeres de la propia MFT, a partir de su registro 0 (y de sus
 /// registros de extensión si la MFT está muy fragmentada).
-fn mft_runs(volume: &Handle, geo: &Geometry) -> io::Result<Vec<Run>> {
+fn mft_runs(volume: &Volume, geo: &Geometry) -> io::Result<Vec<Run>> {
     // El registro 0 está al principio de la MFT: un tramo provisional basta para leerlo.
     let clusters = geo.record.div_ceil(geo.cluster).max(1);
     let bootstrap = [Run { vcn: 0, lcn: geo.mft_start_lcn, len: clusters }];
@@ -290,11 +341,12 @@ fn mft_runs(volume: &Handle, geo: &Geometry) -> io::Result<Vec<Run>> {
 }
 
 /// Lee un atributo no residente completo (se usa para listas de atributos grandes).
-fn read_attribute(volume: &Handle, geo: &Geometry, runs: &[Run], size: u64) -> io::Result<Vec<u8>> {
+fn read_attribute(volume: &Volume, geo: &Geometry, runs: &[Run], size: u64) -> io::Result<Vec<u8>> {
     let mut out = Vec::with_capacity(size as usize);
     for r in runs {
-        let mut buf = AlignedBuf::new((r.len * geo.cluster) as usize);
-        let slice = &mut buf.as_mut()[..(r.len * geo.cluster) as usize];
+        let bytes = (r.len * geo.cluster) as usize;
+        let mut buf = AlignedBuf::new(bytes);
+        let slice = &mut buf.as_mut()[..bytes];
         read_at(volume, r.lcn * geo.cluster, slice)?;
         out.extend_from_slice(slice);
     }
@@ -303,44 +355,52 @@ fn read_attribute(volume: &Handle, geo: &Geometry, runs: &[Run], size: u64) -> i
 }
 
 /// Lee la MFT entera en bloques de 4 MiB con un hilo lector, mientras los
-/// hilos de rayon analizan el bloque anterior.
+/// hilos de rayon analizan el bloque anterior. Devuelve el tiempo de lectura
+/// y el de análisis.
 fn read_and_parse(
-    volume: &Handle,
+    volume: &Volume,
     geo: &Geometry,
     runs: &[Run],
     recs: &mut [RecInfo],
     all: &mut ParseOut,
     pool: &rayon::ThreadPool,
     progress: &ScanProgress,
-) -> io::Result<()> {
+) -> io::Result<(Duration, Duration)> {
     let record = geo.record as usize;
+    let cluster = geo.cluster;
     let total = recs.len() as u64 * geo.record;
     let chunk_clusters = CHUNK as u64 / geo.cluster;
 
-    std::thread::scope(|s| -> io::Result<()> {
+    std::thread::scope(|s| -> io::Result<(Duration, Duration)> {
         let (full_tx, full_rx) = sync_channel::<io::Result<(u64, usize, AlignedBuf)>>(2);
         let (free_tx, free_rx) = channel::<AlignedBuf>();
         for _ in 0..3 {
             free_tx.send(AlignedBuf::new(CHUNK)).expect("canal abierto");
         }
-        s.spawn(move || {
+        let reader = s.spawn(move || {
+            let mut busy = Duration::ZERO;
             let mut offset = 0u64;
             while offset < total && !progress.is_cancelled() {
                 let Ok(mut buf) = free_rx.recv() else { break };
                 let len = (total - offset).min(CHUNK as u64);
-                let clusters = len.div_ceil(geo.cluster).min(chunk_clusters);
-                let result = read_vcns(volume, geo, runs, offset / geo.cluster, clusters, buf.as_mut())
+                let clusters = len.div_ceil(cluster).min(chunk_clusters);
+                let t = Instant::now();
+                let result = read_vcns(volume, geo, runs, offset / cluster, clusters, buf.as_mut())
                     .map(|()| (offset, len as usize, buf));
+                busy += t.elapsed();
                 let failed = result.is_err();
                 if full_tx.send(result).is_err() || failed {
                     break;
                 }
                 offset += len;
             }
+            busy
         });
 
+        let mut parse_time = Duration::ZERO;
         for message in full_rx {
             let (offset, len, mut buf) = message?;
+            let t = Instant::now();
             let first = (offset / geo.record) as usize;
             let count = len / record;
             let data = &mut buf.as_mut()[..count * record];
@@ -351,7 +411,7 @@ fn read_and_parse(
                     .enumerate()
                     .map(|(i, (d, r))| {
                         let mut out = ParseOut::default();
-                        parse_records(d, record, (first + i * RECORDS_PER_TASK) as u64, r, &mut out);
+                        parse_records(d, record, cluster, (first + i * RECORDS_PER_TASK) as u64, r, &mut out);
                         out
                     })
                     .collect()
@@ -360,8 +420,10 @@ fn read_and_parse(
                 progress.add(out.files, out.dirs, out.bytes);
                 all.append(out);
             }
+            parse_time += t.elapsed();
             let _ = free_tx.send(buf);
         }
-        Ok(())
+        let read_time = reader.join().unwrap_or_default();
+        Ok((read_time, parse_time))
     })
 }

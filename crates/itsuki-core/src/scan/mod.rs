@@ -12,7 +12,7 @@ mod mft;
 #[cfg(windows)]
 mod native;
 mod portable;
-mod util;
+pub(crate) mod util;
 mod walk;
 
 use std::fmt;

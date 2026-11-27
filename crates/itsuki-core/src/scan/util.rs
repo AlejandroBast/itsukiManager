@@ -1,5 +1,29 @@
 //! Utilidades compartidas por los motores de escaneo.
 
+use std::time::Instant;
+
+/// Medición de fases para desarrollo: se activa con la variable de entorno
+/// `ITSUKI_PERFIL` y escribe los tiempos en stderr.
+pub(crate) struct Perf {
+    name: &'static str,
+    on: bool,
+    last: Instant,
+}
+
+impl Perf {
+    pub(crate) fn new(name: &'static str) -> Perf {
+        Perf { name, on: std::env::var_os("ITSUKI_PERFIL").is_some(), last: Instant::now() }
+    }
+
+    /// Escribe el tiempo transcurrido desde la marca anterior.
+    pub(crate) fn mark(&mut self, what: &str) {
+        let now = Instant::now();
+        if self.on {
+            eprintln!("[perfil {}] {what}: {:.1} ms", self.name, (now - self.last).as_secs_f64() * 1000.0);
+        }
+        self.last = now;
+    }
+}
 /// Bit "name surrogate" de las etiquetas de reparse: uniones, enlaces
 /// simbólicos y puntos de montaje. Esas carpetas no se recorren.
 pub(crate) const REPARSE_TAG_NAME_SURROGATE: u32 = 0x2000_0000;
