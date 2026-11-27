@@ -158,6 +158,33 @@ export interface CleanProgress {
   bytes: number;
 }
 
+export type EngineChoice = "auto" | "mft" | "native" | "portable";
+
+/** Ajustes guardados en `ajustes.json`. */
+export interface Settings {
+  engine: EngineChoice;
+  dedupeHardlinks: boolean;
+  cleanToRecycle: boolean;
+  cleanIncludeOpen: boolean;
+  tempMinAgeDays: number;
+  dupesScope: string;
+  dupesMin: number;
+}
+
+export interface DriveEngine extends DiskInfo {
+  /** Motor que usará el escaneo automático de la unidad entera. */
+  engine: string;
+}
+
+export interface AboutInfo {
+  version: string;
+  repo: string;
+  elevated: boolean;
+  threads: number;
+  dataDir: string;
+  drives: DriveEngine[];
+}
+
 /** Error que devuelve el núcleo cuando el usuario cancela. */
 export const CANCELLED = "cancelado";
 
@@ -183,6 +210,10 @@ export const api = {
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
   recyclePaths: (paths: string[]) => invoke<void>("recycle_paths", { paths }),
   cancelJob: () => invoke<void>("cancel_job"),
+  getSettings: () => invoke<Settings>("get_settings"),
+  setSettings: (settings: Settings) => invoke<Settings>("set_settings", { settings }),
+  aboutInfo: () => invoke<AboutInfo>("about_info"),
+  openRepo: () => invoke<void>("open_repo"),
   onScanProgress: (handler: (p: ScanProgress) => void) => on<ScanProgress>("scan-progress", handler),
   onDupesProgress: (handler: (p: ScanProgress) => void) => on<ScanProgress>("dupes-progress", handler),
   onCleanProgress: (handler: (p: CleanProgress) => void) => on<CleanProgress>("clean-progress", handler),

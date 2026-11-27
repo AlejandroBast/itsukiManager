@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use itsuki_core::clean::apps::{app_owner, running_apps};
 use itsuki_core::clean::{Action, DeleteReport, JunkCategory, JunkItem, JunkReport, Safety, clean_item, item_path};
-use itsuki_core::{JunkContext, Tree, find_junk, system};
+use itsuki_core::{Tree, find_junk, system};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -101,7 +101,8 @@ pub async fn junk_scan(app: AppHandle, refresh: bool) -> Result<JunkView, String
     run_blocking(move || {
         let state = app.state::<AppState>();
         let tree = state.tree(&app, &system_root(), refresh)?;
-        let report = find_junk(&tree, &JunkContext::from_env());
+        let ctx = lock(&state.settings).junk_context();
+        let report = find_junk(&tree, &ctx);
         let open = running_apps();
         let categories = report
             .by_category()

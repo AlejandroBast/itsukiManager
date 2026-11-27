@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type DiskInfo, type DupFile, type DupGroup, type DupView } from "../api";
 import { driveLabel, formatCount, formatDate, formatDuration, formatSize } from "../format";
 import { reveal, useJob } from "../hooks";
@@ -6,7 +6,7 @@ import { Icon } from "./Icon";
 import { Alert, Badge, BusyState, EmptyState, IconButton, Modal, PageHeader, Segmented, SelectBox, type Option } from "./ui";
 
 const MB = 1024 ** 2;
-const MINS: Option<string>[] = [
+export const DUP_MINS: Option<string>[] = [
   { value: String(100 * 1024), label: "100 KB o más" },
   { value: String(MB), label: "1 MB o más" },
   { value: String(10 * MB), label: "10 MB o más" },
@@ -41,13 +41,21 @@ interface Pending {
 
 interface Props {
   drives: DiskInfo[];
+  defaultScope: string;
+  defaultMin: number;
   onChanged: () => void;
 }
 
 /** «Duplicados»: archivos con el mismo contenido (no solo el mismo nombre). */
-export function DuplicatesView({ drives, onChanged }: Props) {
-  const [scope, setScope] = useState("personal");
-  const [min, setMin] = useState(String(MB));
+export function DuplicatesView({ drives, defaultScope, defaultMin, onChanged }: Props) {
+  const [scope, setScope] = useState(defaultScope);
+  const [min, setMin] = useState(String(defaultMin));
+
+  // Al cambiar los valores por defecto en Configuración (si la unidad ya no está, carpetas personales).
+  useEffect(() => {
+    setScope(defaultScope === "personal" || drives.some((d) => d.root === defaultScope) ? defaultScope : "personal");
+  }, [defaultScope, drives]);
+  useEffect(() => setMin(String(defaultMin)), [defaultMin]);
   const [data, setData] = useState<DupView | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -91,7 +99,7 @@ export function DuplicatesView({ drives, onChanged }: Props) {
     <section className="page rise" aria-label="Duplicados">
       <PageHeader title="Duplicados" subtitle="Mismo contenido: deja una sola copia.">
         <Segmented label="Dónde buscar" options={scopes} value={scope} disabled={busy} onChange={setScope} />
-        <SelectBox label="Tamaño mínimo" options={MINS} value={min} disabled={busy} onChange={setMin} />
+        <SelectBox label="Tamaño mínimo" options={DUP_MINS} value={min} disabled={busy} onChange={setMin} />
         <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void search()}>
           <Icon name="search" /> {data ? "Buscar de nuevo" : "Buscar duplicados"}
         </button>
@@ -140,7 +148,7 @@ export function DuplicatesView({ drives, onChanged }: Props) {
           </EmptyState>
         )}
         {!busy && data && data.groups.length === 0 && (
-          <EmptyState title="Sin duplicados" text={`No hay archivos repetidos de ${MINS.find((o) => o.value === min)?.label ?? ""} en ${scopeLabel}.`} />
+          <EmptyState title="Sin duplicados" text={`No hay archivos repetidos de ${DUP_MINS.find((o) => o.value === min)?.label ?? ""} en ${scopeLabel}.`} />
         )}
         {!busy && data && data.groups.length > 0 && (
           <div className="page-scroll">

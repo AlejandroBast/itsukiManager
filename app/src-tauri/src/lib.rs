@@ -8,6 +8,7 @@ mod cleanup;
 mod duplicates;
 mod explore;
 mod home;
+mod settings;
 mod state;
 
 use tauri::{LogicalSize, Manager};
@@ -30,8 +31,10 @@ fn fit_small_screen(window: &tauri::WebviewWindow) {
 }
 
 pub fn run() {
+    let state = state::AppState::default();
+    *state::lock(&state.settings) = settings::Settings::load();
     tauri::Builder::default()
-        .manage(state::AppState::default())
+        .manage(state)
         .invoke_handler(tauri::generate_handler![
             home::system_disk,
             home::list_drives,
@@ -43,6 +46,10 @@ pub fn run() {
             duplicates::find_dupes,
             cleanup::junk_scan,
             cleanup::junk_clean,
+            settings::get_settings,
+            settings::set_settings,
+            settings::about_info,
+            settings::open_repo,
             state::cancel_job,
         ])
         .setup(|app| {

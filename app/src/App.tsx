@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, isCancelled, type DiskInfo, type HomeSummary } from "./api";
+import { api, isCancelled, type DiskInfo, type HomeSummary, type Settings } from "./api";
+import { AboutView } from "./components/AboutView";
 import { AnalyzeView } from "./components/AnalyzeView";
 import { CleanupBanner } from "./components/CleanupBanner";
 import { CleanupView } from "./components/CleanupView";
@@ -7,7 +8,7 @@ import { DiskCard } from "./components/DiskCard";
 import { DuplicatesView } from "./components/DuplicatesView";
 import { FoldersCard } from "./components/FoldersCard";
 import { LargeFilesView } from "./components/LargeFilesView";
-import { SectionPlaceholder } from "./components/SectionPlaceholder";
+import { DEFAULT_SETTINGS, SettingsView } from "./components/SettingsView";
 import { Sidebar, type Section } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
 import { UsageCard } from "./components/UsageCard";
@@ -24,6 +25,8 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [scannedFiles, setScannedFiles] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const go = useCallback((s: Section) => {
     setSection(s);
@@ -46,7 +49,21 @@ export function App() {
     }
   }, []);
 
+  const changeSettings = useCallback(
+    (next: Settings) => {
+      const prev = settings;
+      setSettingsError(null);
+      setSettings(next);
+      api.setSettings(next).then(setSettings, (e) => {
+        setSettings(prev);
+        setSettingsError(String(e));
+      });
+    },
+    [settings],
+  );
+
   useEffect(() => {
+    api.getSettings().then(setSettings, () => undefined);
     api.systemDisk().then(setDisk, (e) => setError(String(e)));
     api.listDrives().then(setDrives, () => setDrives([]));
     void analyze(false);
@@ -95,15 +112,37 @@ export function App() {
           )}
           {visited.has("duplicados") && (
             <div {...view("duplicados")}>
-              <DuplicatesView drives={drives} onChanged={markChanged} />
+              <DuplicatesView
+                drives={drives}
+                defaultScope={settings.dupesScope}
+                defaultMin={settings.dupesMin}
+                onChanged={markChanged}
+              />
             </div>
           )}
           {visited.has("limpieza") && (
             <div {...view("limpieza")}>
-              <CleanupView onChanged={markChanged} />
+              <CleanupView
+                defaultToRecycle={settings.cleanToRecycle}
+                defaultIncludeOpen={settings.cleanIncludeOpen}
+                onChanged={markChanged}
+              />
             </div>
           )}
-          {(section === "configuracion" || section === "acerca") && <SectionPlaceholder section={section} />}
+          <div {...view("configuracion")}>
+            <SettingsView
+              settings={settings}
+              drives={drives}
+              error={settingsError}
+              onChange={changeSettings}
+              onDismissError={() => setSettingsError(null)}
+            />
+          </div>
+          {visited.has("acerca") && (
+            <div {...view("acerca")}>
+              <AboutView />
+            </div>
+          )}
         </div>
         {error && section === "inicio" && (
           <div className="toast" role="alert">
