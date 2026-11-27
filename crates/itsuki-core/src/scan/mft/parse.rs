@@ -11,6 +11,7 @@ pub(crate) const ATTR_STANDARD_INFORMATION: u32 = 0x10;
 pub(crate) const ATTR_ATTRIBUTE_LIST: u32 = 0x20;
 pub(crate) const ATTR_FILE_NAME: u32 = 0x30;
 pub(crate) const ATTR_DATA: u32 = 0x80;
+const ATTR_REPARSE_POINT: u32 = 0xC0;
 const ATTR_END: u32 = 0xFFFF_FFFF;
 
 /// Bits de la cabecera del registro.
@@ -176,6 +177,23 @@ impl<'a> Attr<'a> {
         let off = u16_at(self.bytes, 0x20)? as usize;
         decode_runs(self.bytes.get(off..)?, self.lowest_vcn()?)
     }
+
+    /// Clústeres que este tramo del atributo ocupa de verdad en disco (los
+    /// tramos dispersos no cuentan). Es exacto también en archivos
+    /// comprimidos, dispersos o con tamaños reservados enormes como `$BadClus`.
+    pub fn clusters(&self) -> Option<u64> {
+        if !self.non_resident {
+            return None;
+        }
+        let off = u16_at(self.bytes, 0x20)? as usize;
+        let mut total = 0u64;
+        walk_runs(self.bytes.get(off..)?, 0, |_, lcn, len| {
+            if lcn.is_some() {
+                total = total.saturating_add(len);
+            }
+        })?;
+        Some(total)
+    }
 }
 
 /// Recorre los atributos de un registro ya corregido con [`apply_fixup`].
@@ -208,15 +226,26 @@ pub(crate) struct Run {
 
 /// Decodifica los "mapping pairs" de un atributo no residente. Los tramos
 /// dispersos (sin clústeres en disco) se omiten.
-pub(crate) fn decode_runs(data: &[u8], mut vcn: u64) -> Option<Vec<Run>> {
+pub(crate) fn decode_runs(data: &[u8], vcn: u64) -> Option<Vec<Run>> {
     let mut out = Vec::new();
+    walk_runs(data, vcn, |vcn, lcn, len| {
+        if let Some(lcn) = lcn {
+            out.push(Run { vcn, lcn, len });
+        }
+    })?;
+    Some(out)
+}
+
+/// Recorre los "mapping pairs" llamando a `f(vcn, lcn, longitud)`; `lcn` es
+/// `None` en los tramos dispersos. Devuelve `None` si los datos están dañados.
+fn walk_runs(data: &[u8], mut vcn: u64, mut f: impl FnMut(u64, Option<u64>, u64)) -> Option<()> {
     let mut pos = 0;
     let mut lcn: i64 = 0;
     loop {
         let header = *data.get(pos)?;
         pos += 1;
         if header == 0 {
-            break;
+            return Some(());
         }
         let len_size = (header & 0x0F) as usize;
         let off_size = (header >> 4) as usize;
@@ -231,11 +260,12 @@ pub(crate) fn decode_runs(data: &[u8], mut vcn: u64) -> Option<Vec<Run>> {
             if lcn < 0 {
                 return None;
             }
-            out.push(Run { vcn, lcn: lcn as u64, len });
+            f(vcn, Some(lcn as u64), len);
+        } else {
+            f(vcn, None, len);
         }
         vcn = vcn.checked_add(len)?;
     }
-    Some(out)
 }
 
 fn le_unsigned(b: &[u8]) -> u64 {
@@ -248,22 +278,24 @@ fn le_signed(b: &[u8]) -> i64 {
 }
 
 /// Analiza registros consecutivos (`data` empieza en el registro `first_frn`)
-/// y rellena `recs`, que cubre ese mismo rango.
+/// y rellena `recs`, que cubre ese mismo rango. `cluster` es el tamaño de
+/// clúster del volumen en bytes.
 pub(crate) fn parse_records(
     data: &mut [u8],
     rec_size: usize,
+    cluster: u64,
     first_frn: u64,
     recs: &mut [RecInfo],
     out: &mut ParseOut,
 ) {
     for (i, (rec, slot)) in data.chunks_exact_mut(rec_size).zip(recs.iter_mut()).enumerate() {
-        parse_record(rec, first_frn + i as u64, slot, out);
+        parse_record(rec, first_frn + i as u64, cluster, slot, out);
     }
 }
 
 /// Analiza un registro. Los registros base se escriben en `slot`; los de
 /// extensión se guardan en `out.ext` para unirlos después a su base.
-pub(crate) fn parse_record(rec: &mut [u8], frn: u64, slot: &mut RecInfo, out: &mut ParseOut) {
+pub(crate) fn parse_record(rec: &mut [u8], frn: u64, cluster: u64, slot: &mut RecInfo, out: &mut ParseOut) {
     if rec.get(0..4) != Some(b"FILE") || !apply_fixup(rec) {
         return;
     }
@@ -280,14 +312,20 @@ pub(crate) fn parse_record(rec: &mut [u8], frn: u64, slot: &mut RecInfo, out: &m
     let mut info = RecInfo::default();
     let mut size = None;
     let mut alloc = 0u64;
-    let mut tag = 0u32;
+    // La etiqueta de $REPARSE_POINT es la buena; la copia de $FILE_NAME puede
+    // estar desactualizada (por ejemplo, en uniones creadas con mklink /J).
+    let mut reparse_tag = None;
+    let mut name_tag = 0u32;
     for a in attributes(rec) {
         if a.non_resident {
-            if a.lowest_vcn() == Some(0) {
-                alloc += a.on_disk().unwrap_or(0);
-                if a.ty == ATTR_DATA && a.name_len == 0 {
-                    size = a.data_size();
-                }
+            let first = a.lowest_vcn() == Some(0);
+            alloc += match a.clusters() {
+                Some(c) => c.saturating_mul(cluster),
+                None if first => a.on_disk().unwrap_or(0),
+                None => 0,
+            };
+            if first && a.ty == ATTR_DATA && a.name_len == 0 {
+                size = a.data_size();
             }
             continue;
         }
@@ -297,8 +335,9 @@ pub(crate) fn parse_record(rec: &mut [u8], frn: u64, slot: &mut RecInfo, out: &m
                 info.mtime = u64_at(value, 8).map_or(0, |t| filetime_to_unix(t as i64));
                 info.attrs = u32_at(value, 32).unwrap_or(0);
             }
-            ATTR_FILE_NAME => parse_file_name(value, target as u32, &mut tag, out),
+            ATTR_FILE_NAME => parse_file_name(value, target as u32, &mut name_tag, out),
             ATTR_DATA if a.name_len == 0 => size = Some(value.len() as u64),
+            ATTR_REPARSE_POINT => reparse_tag = u32_at(value, 0),
             _ => {}
         }
     }
@@ -307,7 +346,7 @@ pub(crate) fn parse_record(rec: &mut [u8], frn: u64, slot: &mut RecInfo, out: &m
         info.flags = IN_USE | if header_flags & RECORD_IS_DIRECTORY != 0 { IS_DIR } else { 0 };
         info.size = size.unwrap_or(0);
         info.alloc = alloc;
-        info.tag = tag;
+        info.tag = reparse_tag.unwrap_or(name_tag);
         if info.flags & IS_DIR != 0 {
             out.dirs += 1;
         } else {
@@ -316,7 +355,7 @@ pub(crate) fn parse_record(rec: &mut [u8], frn: u64, slot: &mut RecInfo, out: &m
         out.bytes += alloc;
         *slot = info;
     } else {
-        out.ext.push(ExtPart { base: target as u32, size, alloc, tag });
+        out.ext.push(ExtPart { base: target as u32, size, alloc, tag: reparse_tag.unwrap_or(0) });
     }
 }
 
@@ -493,11 +532,12 @@ pub(crate) mod tests {
     }
 
     pub(crate) const FT_2020: u64 = 132_223_104_000_000_000; // 2020-01-01
+    const CLUSTER: u64 = 4096;
 
     fn parse(rec: &mut [u8], frn: u64) -> (RecInfo, ParseOut) {
         let mut slot = RecInfo::default();
         let mut out = ParseOut::default();
-        parse_record(rec, frn, &mut slot, &mut out);
+        parse_record(rec, frn, CLUSTER, &mut slot, &mut out);
         (slot, out)
     }
 
@@ -562,7 +602,16 @@ pub(crate) mod tests {
         let mut sparse = RecordBuilder::new(1024, RECORD_IN_USE, 0)
             .std_info(FT_2020, 0x200)
             .file_name(5, "disperso.bin", 1)
-            .non_resident(ATTR_DATA, "", ATTR_FLAG_SPARSE, 0, 1 << 30, 1 << 30, 65536, &[0x01, 0x10])
+            .non_resident(
+                ATTR_DATA,
+                "",
+                ATTR_FLAG_SPARSE,
+                0,
+                1 << 30,
+                1 << 30,
+                65536,
+                &[0x11, 0x10, 0x20, 0x03, 0x00, 0x00, 0x04],
+            )
             .non_resident(ATTR_DATA, "WofCompressedData", 0, 0, 4096, 3000, 0, &[0x11, 0x01, 0x20])
             .build();
         let (info, _) = parse(&mut sparse, 31);
@@ -585,14 +634,42 @@ pub(crate) mod tests {
         // Registro de extensión con el primer tramo del $DATA y otro nombre.
         let mut ext = RecordBuilder::new(1024, RECORD_IN_USE, 90)
             .file_name(50, "otro nombre.dat", 1)
-            .non_resident(ATTR_DATA, "", 0, 0, 1 << 20, 1_000_000, 0, &[0x11, 0x01, 0x30])
+            .non_resident(ATTR_DATA, "", 0, 0, 1 << 20, 1_000_000, 0, &[0x12, 0x00, 0x01, 0x30])
             .build();
         let mut slot = RecInfo::default();
         let mut out = ParseOut::default();
-        parse_record(&mut ext, 1234, &mut slot, &mut out);
+        parse_record(&mut ext, 1234, CLUSTER, &mut slot, &mut out);
         assert_eq!(slot, RecInfo::default(), "la extensión no escribe en su propio hueco");
         assert_eq!(out.ext, vec![ExtPart { base: 90, size: Some(1_000_000), alloc: 1 << 20, tag: 0 }]);
         assert_eq!(out.links[0].frn, 90, "el nombre pertenece al registro base");
+    }
+
+    #[test]
+    fn espacio_reservado_sin_clusteres_no_cuenta() {
+        // Como $BadClus:$Bad: "reserva" todo el volumen pero sin clústeres reales
+        // y sin la bandera de disperso.
+        let mut bad = RecordBuilder::new(1024, RECORD_IN_USE, 0)
+            .std_info(FT_2020, 0x6)
+            .file_name(5, "$BadClus", 3)
+            .non_resident(ATTR_DATA, "$Bad", 0, 0, 2 << 40, 2 << 40, 0, &[0x04, 0x00, 0x00, 0x00, 0x20])
+            .build();
+        let (info, _) = parse(&mut bad, 8);
+        assert_eq!(info.alloc, 0);
+        assert_eq!(info.size, 0, "el flujo sin nombre está vacío");
+    }
+
+    #[test]
+    fn etiqueta_desde_reparse_point() {
+        // mklink /J no actualiza la copia de $FILE_NAME: la etiqueta sale de $REPARSE_POINT.
+        let mut value = vec![0u8; 16];
+        value[0..4].copy_from_slice(&0xA000_0003u32.to_le_bytes());
+        let mut rec = RecordBuilder::new(1024, RECORD_IN_USE | RECORD_IS_DIRECTORY, 0)
+            .std_info(FT_2020, 0x400 | 0x10)
+            .file_name(5, "union", 1)
+            .resident(ATTR_REPARSE_POINT, "", &value)
+            .build();
+        let (info, _) = parse(&mut rec, 61);
+        assert_eq!(info.tag, 0xA000_0003);
     }
 
     #[test]
@@ -639,8 +716,8 @@ pub(crate) mod tests {
         let mut a = ParseOut::default();
         let mut b = ParseOut::default();
         let mut slot = RecInfo::default();
-        parse_record(&mut RecordBuilder::new(1024, 1, 0).file_name(5, "a", 1).build(), 20, &mut slot, &mut a);
-        parse_record(&mut RecordBuilder::new(1024, 1, 0).file_name(5, "bb", 1).build(), 21, &mut slot, &mut b);
+        parse_record(&mut RecordBuilder::new(1024, 1, 0).file_name(5, "a", 1).build(), 20, CLUSTER, &mut slot, &mut a);
+        parse_record(&mut RecordBuilder::new(1024, 1, 0).file_name(5, "bb", 1).build(), 21, CLUSTER, &mut slot, &mut b);
         a.append(b);
         assert_eq!(a.links.len(), 2);
         let l = a.links[1];

@@ -18,7 +18,8 @@ pub(crate) fn apply_extensions(recs: &mut [RecInfo], ext: &[ExtPart]) {
         if let Some(size) = e.size {
             r.size = size;
         }
-        if r.tag == 0 {
+        // La etiqueta de una extensión viene de $REPARSE_POINT: es la fiable.
+        if e.tag != 0 {
             r.tag = e.tag;
         }
     }
