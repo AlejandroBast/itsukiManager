@@ -1,6 +1,11 @@
 # Compilación de Rust
 /target/
 
+# Interfaz (Node y Tauri)
+/app/node_modules/
+/app/dist/
+/app/src-tauri/gen/
+
 # Memoria local de desarrollo (no se sube)
 memoriitsukiManager.md
 

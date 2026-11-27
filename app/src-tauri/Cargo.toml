@@ -1,0 +1,18 @@
+[package]
+name = "itsuki-app"
+description = "Interfaz de escritorio de itsukiManager"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lib]
+name = "itsuki_app"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+itsuki-core = { path = "../../crates/itsuki-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+tauri = { version = "2", features = [] }
