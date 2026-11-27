@@ -1,6 +1,13 @@
-/* Escala: 1rem = 16 px con la ventana del diseño (1672 x 941). */
+/*
+  Escala: el diseño está hecho a 1672 × 941 (1rem = 16 px). La ventana es fija de 1080 × 720: la escala la
+  marca el ancho (1rem ≈ 10,3 px) y la altura que sobra se reparte con --vy (al final del archivo).
+*/
 html {
-  font-size: clamp(10px, min(calc(100vw / 104.5), calc(100vh / 58.8125)), 22px);
+  font-size: clamp(6px, min(calc(100vw / 104.5), calc(100vh / 58.8125)), 22px);
+}
+
+:root {
+  --vy: 1;
 }
 
 *,
@@ -62,7 +69,7 @@ img {
 .brand {
   display: flex;
   align-items: center;
-  padding: 1.49rem 0 0 1.26rem;
+  padding: calc(1.49rem * var(--vy)) 0 0 1.26rem;
 }
 
 .brand img {
@@ -96,8 +103,8 @@ img {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.39rem;
-  margin: 1.26rem 0.95rem 0 1.05rem;
+  gap: calc(4.33rem * var(--vy) - 3.94rem);
+  margin: calc(1.26rem * var(--vy)) 0.95rem 0 1.05rem;
 }
 
 .nav-item {
@@ -212,7 +219,7 @@ img {
   height: 1.6rem;
 }
 
-.win-btn:hover {
+.win-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.07);
   color: var(--text);
 }
@@ -222,12 +229,17 @@ img {
   color: #fff;
 }
 
+.win-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
 .content {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  padding: 0 1.55rem 3.05rem;
+  padding: 0 1.55rem calc(3.05rem * var(--vy));
   overflow-y: auto;
 }
 
@@ -369,9 +381,9 @@ img {
 .welcome {
   position: relative;
   flex: none;
-  height: 8.75rem;
+  height: calc(8.75rem * var(--vy));
   margin-right: -0.8rem;
-  padding: 2.05rem 0 0 1.95rem;
+  padding: calc(2.05rem * var(--vy)) 0 0 1.95rem;
   overflow: hidden;
   border: 1px solid rgba(80, 48, 59, 0.6);
   border-radius: 1rem;
@@ -397,7 +409,7 @@ img {
 
 .welcome .face {
   position: absolute;
-  top: -7.95rem;
+  top: calc(-7.95rem + 4.375rem * (var(--vy) - 1));
   right: 5.4rem;
   width: 30.8rem;
   pointer-events: none;
@@ -419,8 +431,8 @@ img {
   display: flex;
   flex: none;
   align-items: center;
-  height: 9.06rem;
-  margin: 1.875rem 0 1.625rem;
+  height: calc(9.06rem * var(--vy));
+  margin: calc(1.875rem * var(--vy)) 0 calc(1.625rem * var(--vy));
 }
 
 .disk-card {
@@ -547,13 +559,13 @@ img {
   flex: 1;
   grid-template-columns: 582fr 604fr;
   gap: 1.5rem;
-  min-height: 20.5rem;
+  min-height: calc(20.5rem * var(--vy));
 }
 
 .usage {
   display: flex;
   flex-direction: column;
-  padding: 0.9125rem 1.55rem 1rem 1.8rem;
+  padding: calc(0.9125rem * var(--vy)) 1.55rem calc(1rem * var(--vy)) 1.8rem;
 }
 
 .usage-body {
@@ -561,7 +573,7 @@ img {
   flex: 1;
   align-items: center;
   gap: 1.7rem;
-  padding: 1.2875rem 0 0.2rem 0.15rem;
+  padding: calc(1.2875rem * var(--vy)) 0 calc(0.2rem * var(--vy)) 0.15rem;
 }
 
 .donut {
@@ -608,7 +620,7 @@ img {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 1.3rem;
+  gap: calc(1.3rem * var(--vy));
   margin: 0;
   padding: 0;
   list-style: none;
@@ -636,7 +648,7 @@ img {
 .folders {
   display: flex;
   flex-direction: column;
-  padding: 0.9125rem 1.5rem 1rem 1.8rem;
+  padding: calc(0.9125rem * var(--vy)) 1.5rem calc(1rem * var(--vy)) 1.8rem;
 }
 
 .folders-head {
@@ -646,7 +658,7 @@ img {
 }
 
 .folder-list {
-  margin: 1.7375rem 0 0;
+  margin: calc(1.7375rem * var(--vy)) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -657,7 +669,7 @@ img {
   align-items: center;
   gap: 0.875rem;
   width: 100%;
-  height: 2.92rem;
+  height: calc(2.92rem * var(--vy));
   padding: 0 0.75rem 0 0.56rem;
   border: 0;
   border-radius: 0;
@@ -720,8 +732,8 @@ img {
   display: flex;
   flex: none;
   align-items: center;
-  height: 8.8rem;
-  margin-top: 1.875rem;
+  height: calc(8.8rem * var(--vy));
+  margin-top: calc(1.875rem * var(--vy));
   padding: 0 2.15rem 0 2rem;
   overflow: hidden;
   border: 1px solid rgba(217, 76, 96, 0.38);
@@ -846,4 +858,18 @@ img {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* ---------- Ventana 3:2 (1080 × 720) ---------- */
+
+/* El ancho fija la escala y sobra ~20 % de altura: los espacios verticales crecen en proporción. */
+@media (max-aspect-ratio: 8/5) {
+  :root {
+    --vy: 1.195;
+  }
+
+  .donut {
+    width: 14rem;
+    height: 14rem;
+  }
 }
