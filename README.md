@@ -216,6 +216,9 @@ npm run tauri build    # genera el instalador (NSIS)
   abierta guarda una foto diaria de la unidad del sistema en el historial y revisa cada hora
   el espacio: avisa con una notificación de Windows cuando una unidad pasa a «Aviso» o
   «Crítico» (los mismos umbrales que `itsuki avisos`).
+- Se actualiza sola: comprueba al abrir y una vez al día si hay una versión nueva en GitHub y, desde
+  Acerca de, se instala con un clic (se verifica su SHA-256). La portable reemplaza sus propios
+  archivos; la instalada ejecuta el instalador en silencio. En los dos casos se reinicia sola.
 - Todo lo que borra pide confirmación. Desde las listas se envía a la Papelera, y las rutas
   protegidas (Windows, programas, carpetas base del usuario) se rechazan. La limpieza borra de
   forma permanente salvo que se marque «Enviar a la Papelera».

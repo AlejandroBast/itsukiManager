@@ -11,6 +11,7 @@ mod home;
 mod monitor;
 mod settings;
 mod state;
+mod updater;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -116,6 +117,9 @@ pub fn run() {
             settings::about_info,
             settings::open_repo,
             state::cancel_job,
+            updater::update_status,
+            updater::install_update,
+            updater::open_release_page,
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -124,6 +128,7 @@ pub fn run() {
             }
             build_tray(app)?;
             monitor::start(app.handle().clone());
+            updater::start(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
