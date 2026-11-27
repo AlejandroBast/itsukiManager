@@ -76,6 +76,71 @@ pub fn date(unix_secs: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// Diferencia de la hora local con UTC, en segundos (hora local = UTC + esto).
+pub fn local_offset() -> i64 {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
+        // SAFETY: estructura C plana; todo a cero es válido.
+        let mut tz: TIME_ZONE_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: puntero a una estructura válida.
+        let id = unsafe { GetTimeZoneInformation(&mut tz) };
+        // 2 = TIME_ZONE_ID_DAYLIGHT (horario de verano en curso).
+        let bias = tz.Bias + if id == 2 { tz.DaylightBias } else { tz.StandardBias };
+        -i64::from(bias) * 60
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
+/// Fecha y hora local: `2026-11-26 14:05`. `-` si es desconocida.
+pub fn datetime(unix_secs: i64) -> String {
+    if unix_secs <= 0 {
+        return "-".into();
+    }
+    let t = unix_secs + local_offset();
+    let (y, m, d) = civil_from_days(t.div_euclid(86_400));
+    let s = t.rem_euclid(86_400);
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}", s / 3600, s % 3600 / 60)
+}
+
+/// Tiempo transcurrido en palabras: `hace 5 min`, `hace 3 h`, `hace 2 días`.
+pub fn ago(secs: i64) -> String {
+    match secs {
+        s if s < 60 => "hace un momento".into(),
+        s if s < 3600 => format!("hace {} min", s / 60),
+        s if s < 86_400 => format!("hace {} h", s / 3600),
+        s if s < 2 * 86_400 => "hace 1 día".into(),
+        s => format!("hace {} días", s / 86_400),
+    }
+}
+
+/// Lee una fecha `AAAA-MM-DD` y devuelve el último segundo de ese día en hora
+/// local (segundos Unix).
+pub fn parse_date_end(text: &str) -> Option<i64> {
+    let mut parts = text.trim().split('-');
+    let y: i64 = parts.next()?.parse().ok()?;
+    let m: u32 = parts.next()?.parse().ok()?;
+    let d: u32 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    Some(days_from_civil(y, m, d) * 86_400 + 86_399 - local_offset())
+}
+
+/// Fecha civil a días desde 1970-01-01 (algoritmo de Howard Hinnant).
+fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let mp = i64::from(if m > 2 { m - 3 } else { m + 9 });
+    let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
 /// Segundos Unix actuales.
 pub fn now_unix() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
@@ -129,6 +194,19 @@ mod tests {
         assert_eq!(count(1_234_567_890), "1.234.567.890");
         assert_eq!(percent(1, 3), "33,3%");
         assert_eq!(percent(5, 0), "0,0%");
+    }
+
+    #[test]
+    fn fechas_civiles_ida_y_vuelta() {
+        for days in [0i64, 59, 60, 11_016, 20_783, -1, 36_525] {
+            let (y, m, d) = civil_from_days(days);
+            assert_eq!(days_from_civil(y, m, d), days);
+        }
+        let end = parse_date_end("2026-11-26").unwrap() + local_offset();
+        assert_eq!(end, 1_795_651_200 + 86_399);
+        assert!(parse_date_end("2026-13-01").is_none());
+        assert_eq!(ago(30), "hace un momento");
+        assert_eq!(ago(3 * 86_400 + 5), "hace 3 días");
     }
 
     #[test]

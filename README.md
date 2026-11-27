@@ -4,9 +4,9 @@ Gestor de almacenamiento para Windows, escrito en Rust. Escanea discos completos
 en segundos y muestra qué ocupa espacio (carpetas de más de 1 GB, archivos
 grandes, tipos de archivo) para liberar espacio con seguridad.
 
-> **Estado:** fases 1 a 3 listas: motores de escaneo nativo y MFT, limpieza
-> inteligente, duplicados y línea de comandos `itsuki`. La interfaz gráfica llegará en
-> una fase posterior.
+> **Estado:** fases 1 a 4 listas: motores de escaneo nativo y MFT, limpieza
+> inteligente, duplicados, historial con avisos y línea de comandos `itsuki`. La
+> siguiente fase es la interfaz gráfica.
 
 ## Qué hace
 
@@ -21,6 +21,9 @@ grandes, tipos de archivo) para liberar espacio con seguridad.
   cachés de npm/pip/cargo, cachés de Steam y Epic, la Papelera e instaladores viejos,
   cada uno con su nivel de seguridad, y los limpia sin riesgo.
 - **Duplicados**: compara el contenido real de los archivos (no solo el nombre).
+- **Historial y crecimiento**: guarda fotos de cada escaneo y muestra qué carpetas
+  crecieron o se redujeron desde la anterior.
+- **Avisos**: unidades casi llenas y a qué ritmo se llenan (`se llena en ~20 días`).
 - **Papelera segura**: `papelera` nunca borra de forma permanente y rechaza rutas
   críticas (raíz de la unidad, Windows, Archivos de programa, carpetas personales completas…).
 - **Exportación** a CSV (separado por `;`, se abre directo en Excel en español) y JSON.
@@ -58,8 +61,32 @@ final de cada archivo y solo lee entero lo que sigue empatado (xxHash3 de 128 bi
 Sin ruta revisa tus carpetas personales; se salta los enlaces duros, los archivos en
 la nube, los programas y las bibliotecas de juegos, donde los repetidos son normales.
 
-## Motores de escaneo
+## Historial y avisos
 
+`itsuki crecimiento` escanea, guarda una foto y la compara con la anterior de la
+misma ruta (o con la que indiques: `--desde 12`, `--desde 7d`, `--desde 2026-11-20`).
+Muestra solo las carpetas que explican el cambio: si `Docker\wsl\disk` creció 3 GB, no
+repite también `AppData`, `Local` y `Docker` (`--todas` las incluye).
+
+- Las fotos se guardan en SQLite en `%LOCALAPPDATA%\itsukiManager\historial.db`
+  (o en la carpeta de la variable `ITSUKI_DATOS`).
+- Cada foto guarda los totales, el espacio libre de la unidad y las carpetas de
+  100 MB o más (unos 80 KB por foto de todo C:). Se conservan las 100 más recientes
+  de cada ruta.
+
+`itsuki avisos` revisa todas las unidades:
+
+| Estado | Cuándo |
+|---|---|
+| **Crítico** | Queda menos del mayor entre 5 GB y el 5 % del disco |
+| **Aviso** | Queda menos del mayor entre 20 GB y el 10 % (ajustable con `--min-libre 15%` o `--min-libre 50GB`), o al ritmo actual se llena en menos de 30 días |
+
+El ritmo de llenado se calcula con las fotos del historial de los últimos 30 días
+(cualquier escaneo de esa unidad sirve). Si hay algún aviso termina con código de
+salida 1, para usarlo en scripts. Las notificaciones automáticas llegarán con la
+interfaz gráfica (icono en la bandeja del sistema).
+
+## Motores de escaneo
 | Motor | Cuándo se usa | Cómo funciona |
 |---|---|---|
 | `mft` | Automático como administrador al escanear una unidad NTFS completa | Abre el volumen una sola vez y lee la tabla maestra de archivos (MFT) en bloques de 4 MiB con varios lectores en paralelo, mientras 12 hilos analizan los registros |
@@ -124,6 +151,10 @@ itsuki limpieza --limpiar seguro         # limpia todo lo seguro (pide confirmac
 itsuki limpieza --limpiar temporales,papelera --papelera
 itsuki duplicados                        # duplicados en tus carpetas personales
 itsuki duplicados D:\ --min 10MB --csv duplicados.csv
+itsuki crecimiento                       # guarda una foto y muestra qué creció
+itsuki crecimiento --desde 7d           # comparado con hace una semana
+itsuki historial                         # fotos guardadas (historial borrar 3)
+itsuki avisos                            # unidades casi llenas y tendencia
 ```
 
 Para el motor MFT, abre la terminal como administrador: `itsuki` lo usa solo al
@@ -155,7 +186,7 @@ permisos se omite.
 
 | Carpeta | Contenido |
 |---|---|
-| `crates/itsuki-core` | Núcleo reutilizable: escaneo (`scan`, con los motores `mft`, `native` y `portable`), árbol (`tree`), consultas (`query`), tipos (`types`), limpieza (`clean`), duplicados (`dupes`), acciones seguras (`actions`), sistema (`system`) |
+| `crates/itsuki-core` | Núcleo reutilizable: escaneo (`scan`, con los motores `mft`, `native` y `portable`), árbol (`tree`), consultas (`query`), tipos (`types`), limpieza (`clean`), duplicados (`dupes`), historial (`history`), avisos (`alerts`), acciones seguras (`actions`), sistema (`system`) |
 | `crates/itsuki-cli` | Programa de línea de comandos `itsuki` |
 
 ## Hoja de ruta
@@ -163,5 +194,5 @@ permisos se omite.
 1. ~~Motor de escaneo paralelo y CLI~~
 2. ~~Motor MFT para NTFS~~
 3. ~~Limpieza inteligente y duplicados~~
-4. Historial de escaneos, crecimiento por carpeta y avisos de disco lleno
+4. ~~Historial de escaneos, crecimiento por carpeta y avisos de disco lleno~~
 5. Interfaz gráfica (Tauri + React) con treemap interactivo

@@ -7,13 +7,17 @@
 //! - [`actions`]: Papelera y Explorador, con rutas protegidas.
 //! - [`clean`]: basura conocida (temporales, cachés, node_modules…) y su borrado seguro.
 //! - [`dupes`]: archivos duplicados.
+//! - [`history`]: historial de escaneos (SQLite) y crecimiento por carpeta.
+//! - [`alerts`]: avisos de disco lleno y ritmo de llenado.
 //! - [`system`]: permisos y unidades.
 //! - [`format`]: tamaños, cantidades y fechas en español.
 
 pub mod actions;
+pub mod alerts;
 pub mod clean;
 pub mod dupes;
 pub mod format;
+pub mod history;
 pub mod query;
 pub mod scan;
 pub mod system;

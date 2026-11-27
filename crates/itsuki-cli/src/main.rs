@@ -1,5 +1,6 @@
 //! `itsuki`: línea de comandos de itsukiManager.
 
+mod historial;
 mod limpieza;
 mod ui;
 
@@ -105,6 +106,12 @@ enum Command {
     Limpieza(limpieza::LimpiezaArgs),
     /// Busca archivos duplicados comparando su contenido
     Duplicados(limpieza::DuplicadosArgs),
+    /// Fotos guardadas de los escaneos (lista, guardar, borrar)
+    Historial(historial::HistorialArgs),
+    /// Escanea, guarda una foto y muestra qué carpetas crecieron desde la anterior
+    Crecimiento(historial::CrecimientoArgs),
+    /// Avisa de unidades casi llenas y de a qué ritmo se llenan
+    Avisos(historial::AvisosArgs),
 }
 
 #[derive(Args)]
@@ -213,6 +220,9 @@ fn main() -> ExitCode {
         Command::Comparar(a) => ctx.comparar(a),
         Command::Limpieza(a) => ctx.limpieza(a),
         Command::Duplicados(a) => ctx.duplicados(a),
+        Command::Historial(a) => ctx.historial(a),
+        Command::Crecimiento(a) => ctx.crecimiento(a),
+        Command::Avisos(a) => ctx.avisos(a),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
