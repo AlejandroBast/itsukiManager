@@ -162,23 +162,17 @@ impl Table {
     }
 }
 
-/// Muestra el progreso del escaneo en stderr hasta que `done` sea verdadero.
-pub fn progress_loop(progress: &ScanProgress, done: &AtomicBool) {
+/// Muestra en stderr una línea de estado que se refresca hasta que `done`
+/// sea verdadero, y la borra al terminar.
+pub fn status_loop(done: &AtomicBool, line: impl Fn() -> String) {
     let mut err = io::stderr();
     let mut last_len = 0usize;
     let spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     let mut tick = 0usize;
     while !done.load(Ordering::Relaxed) {
-        let p = progress.snapshot();
-        let line = format!(
-            "  {} Escaneando… {} archivos · {} carpetas · {}",
-            spinner[tick % spinner.len()],
-            format::count(p.files),
-            format::count(p.dirs),
-            format::size(p.bytes)
-        );
-        let len = line.chars().count();
-        let _ = write!(err, "\r{line}{}", " ".repeat(last_len.saturating_sub(len)));
+        let text = format!("  {} {}", spinner[tick % spinner.len()], line());
+        let len = text.chars().count();
+        let _ = write!(err, "\r{text}{}", " ".repeat(last_len.saturating_sub(len)));
         let _ = err.flush();
         last_len = len;
         tick += 1;
@@ -188,6 +182,18 @@ pub fn progress_loop(progress: &ScanProgress, done: &AtomicBool) {
     let _ = err.flush();
 }
 
+/// Progreso del escaneo.
+pub fn progress_loop(progress: &ScanProgress, done: &AtomicBool) {
+    status_loop(done, || {
+        let p = progress.snapshot();
+        format!(
+            "Escaneando… {} archivos · {} carpetas · {}",
+            format::count(p.files),
+            format::count(p.dirs),
+            format::size(p.bytes)
+        )
+    });
+}
 #[cfg(test)]
 mod tests {
     use super::bar;
