@@ -35,6 +35,8 @@ const CHUNK: usize = 4 << 20;
 const RECORDS_PER_TASK: usize = 1024;
 /// Tamaño mínimo de lectura al que se baja si el controlador rechaza las grandes.
 const MIN_IO: usize = 64 << 10;
+/// Lectores en paralelo en unidades SSD (en discos mecánicos se usa uno).
+const READERS: usize = 4;
 
 /// Geometría del volumen NTFS.
 struct Geometry {
@@ -95,6 +97,70 @@ fn step(what: &'static str) -> impl FnOnce(io::Error) -> io::Error {
     move |e| io::Error::new(e.kind(), format!("{what}: {e}"))
 }
 
+/// Forma de abrir el volumen: ruta del dispositivo (terminada en NUL) y si se
+/// usa la caché del sistema.
+#[derive(Clone)]
+struct Access {
+    path: Vec<u16>,
+    buffered: bool,
+}
+
+fn open_volume(access: &Access) -> io::Result<Volume> {
+    let flags = if access.buffered { 0 } else { FILE_FLAG_NO_BUFFERING };
+    // SAFETY: `path` termina en NUL.
+    let handle = Handle::from_create(unsafe {
+        CreateFileW(
+            access.path.as_ptr(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            ptr::null(),
+            OPEN_EXISTING,
+            flags,
+            ptr::null_mut(),
+        )
+    })?;
+    Ok(Volume { handle, max_io: AtomicUsize::new(CHUNK) })
+}
+
+/// Formas de abrir el volumen, de la más rápida a la más compatible: por su
+/// nombre GUID y por su letra, sin caché y con caché. Algunos controladores
+/// (por ejemplo, de ciertos discos SATA) rechazan la lectura directa sin caché.
+fn access_candidates(mount: &[u16], device: &[u16]) -> Vec<Access> {
+    let mut paths = vec![device.to_vec()];
+    let end = mount.iter().position(|&c| c == 0).unwrap_or(mount.len());
+    let mount = String::from_utf16_lossy(&mount[..end]);
+    let mount = mount.strip_prefix(r"\\?\").unwrap_or(&mount);
+    let b = mount.as_bytes();
+    if b.len() == 3 && b[0].is_ascii_alphabetic() && &b[1..] == b":\\" {
+        paths.push(format!(r"\\.\{}", &mount[..2]).encode_utf16().chain(Some(0)).collect());
+    }
+    [false, true]
+        .into_iter()
+        .flat_map(|buffered| paths.iter().map(move |p| Access { path: p.clone(), buffered }))
+        .collect()
+}
+
+/// Las bibliotecas de juegos de Xbox (volúmenes con `.GamingRoot`) tienen un
+/// filtro de Gaming Services que rechaza la lectura directa del volumen.
+fn explain_blocked(mount: &[u16], error: io::Error) -> io::Error {
+    let end = mount.iter().position(|&c| c == 0).unwrap_or(mount.len());
+    let root = String::from_utf16_lossy(&mount[..end]);
+    let gaming = Path::new(&root).join(".GamingRoot").exists();
+    if error.raw_os_error() == Some(50) || error.to_string().contains("os error 50") {
+        if gaming {
+            return io::Error::new(
+                io::ErrorKind::Unsupported,
+                "el volumen tiene juegos de Xbox y su filtro de protección (gameflt) bloquea la lectura directa; \
+                 usa el motor nativo",
+            );
+        }
+        return io::Error::new(
+            io::ErrorKind::Unsupported,
+            format!("un controlador o filtro del sistema bloquea la lectura directa del volumen ({error})"),
+        );
+    }
+    error
+}
 /// Escanea `root` leyendo directamente la MFT de su volumen.
 pub(crate) fn scan(
     root: &Path,
@@ -119,26 +185,42 @@ pub(crate) fn scan(
     if end > 0 && device[end - 1] == u16::from(b'\\') {
         device[end - 1] = 0;
     }
+    device.truncate(end.max(1));
+    if device.last() != Some(&0) {
+        device.push(0);
+    }
 
-    // SAFETY: `device` termina en NUL.
-    let handle = Handle::from_create(unsafe {
-        CreateFileW(
-            device.as_ptr(),
-            GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            ptr::null(),
-            OPEN_EXISTING,
-            FILE_FLAG_NO_BUFFERING,
-            ptr::null_mut(),
-        )
-    })
-    .map_err(step("abrir el volumen"))?;
-    let volume = Volume { handle, max_io: AtomicUsize::new(CHUNK) };
-
-    let geo = geometry(&volume).map_err(step("datos del volumen NTFS"))?;
+    // Se prueba cada forma de abrir el volumen hasta que una lee la MFT.
+    let mut last_error = None;
+    let mut chosen = None;
+    for access in access_candidates(&mount, &device) {
+        let attempt = open_volume(&access).map_err(step("abrir el volumen")).and_then(|v| {
+            let geo = geometry(&v).map_err(step("datos del volumen NTFS"))?;
+            let runs = mft_runs(&v, &geo).map_err(step("ubicación de la MFT"))?;
+            Ok((v, geo, runs))
+        });
+        match attempt {
+            Ok(found) => {
+                chosen = Some((access, found));
+                break;
+            }
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return Err(e),
+            Err(e) => last_error = Some(e),
+        }
+    }
+    let Some((access, (volume, geo, runs))) = chosen else {
+        let error = last_error.unwrap_or_else(|| invalid("no se pudo abrir el volumen"));
+        return Err(explain_blocked(&mount, error));
+    };
     let root_frn = file_reference(&root_w).map_err(step("referencia de la carpeta"))? & FRN_MASK;
-    let runs = mft_runs(&volume, &geo).map_err(step("ubicación de la MFT"))?;
-    perf.mark("abrir volumen y localizar la MFT");
+    // En discos mecánicos las lecturas en paralelo obligan a mover el cabezal.
+    let hdd = crate::system::volume_of(root).and_then(|v| v.seek_penalty).unwrap_or(false);
+    let readers = if hdd { 1 } else { READERS };
+    perf.mark(&format!(
+        "abrir volumen ({}, {} lector(es)) y localizar la MFT",
+        if access.buffered { "con caché" } else { "sin caché" },
+        readers
+    ));
 
     let total_records = (geo.mft_valid / geo.record) as usize;
     if root_frn as usize >= total_records {
@@ -147,7 +229,8 @@ pub(crate) fn scan(
     let mut recs = vec![RecInfo::default(); total_records];
     let mut all = ParseOut::default();
     let (read_time, parse_time) =
-        read_and_parse(&volume, &geo, &runs, &mut recs, &mut all, pool, progress).map_err(step("lectura de la MFT"))?;
+        read_and_parse(volume, &access, readers, &geo, &runs, &mut recs, &mut all, pool, progress)
+            .map_err(step("lectura de la MFT"))?;
     perf.mark(&format!(
         "leer y analizar {} registros ({} MB; lectura {:.0} ms, análisis {:.0} ms)",
         total_records,
@@ -164,7 +247,6 @@ pub(crate) fn scan(
     perf.mark("construir el árbol");
     Ok(out)
 }
-
 /// Pide a NTFS el tamaño de sector, clúster y registro, y dónde está la MFT.
 fn geometry(volume: &Volume) -> io::Result<Geometry> {
     let mut data = NTFS_VOLUME_DATA_BUFFER::default();
@@ -354,11 +436,15 @@ fn read_attribute(volume: &Volume, geo: &Geometry, runs: &[Run], size: u64) -> i
     Ok(out)
 }
 
-/// Lee la MFT entera en bloques de 4 MiB con un hilo lector, mientras los
-/// hilos de rayon analizan el bloque anterior. Devuelve el tiempo de lectura
-/// y el de análisis.
+/// Lee la MFT entera en bloques de 4 MiB. Varios hilos lectores (cada uno
+/// con su propio handle, para tener varias lecturas en vuelo) envían los
+/// bloques a este hilo, que los analiza en paralelo con rayon. Devuelve el
+/// tiempo de lectura y el de análisis.
+#[allow(clippy::too_many_arguments)]
 fn read_and_parse(
-    volume: &Volume,
+    first: Volume,
+    access: &Access,
+    readers: usize,
     geo: &Geometry,
     runs: &[Run],
     recs: &mut [RecInfo],
@@ -369,61 +455,90 @@ fn read_and_parse(
     let record = geo.record as usize;
     let cluster = geo.cluster;
     let total = recs.len() as u64 * geo.record;
-    let chunk_clusters = CHUNK as u64 / geo.cluster;
+    let chunks = total.div_ceil(CHUNK as u64) as usize;
+    let readers = readers.clamp(1, chunks.max(1));
+    let chunk_clusters = CHUNK as u64 / cluster;
+    // Resultados por bloque: se unen en orden para que el árbol sea siempre igual.
+    let mut outs: Vec<Option<ParseOut>> = (0..chunks).map(|_| None).collect();
+    let mut first = Some(first);
 
-    std::thread::scope(|s| -> io::Result<(Duration, Duration)> {
-        let (full_tx, full_rx) = sync_channel::<io::Result<(u64, usize, AlignedBuf)>>(2);
-        let (free_tx, free_rx) = channel::<AlignedBuf>();
-        for _ in 0..3 {
-            free_tx.send(AlignedBuf::new(CHUNK)).expect("canal abierto");
-        }
-        let reader = s.spawn(move || {
-            let mut busy = Duration::ZERO;
-            let mut offset = 0u64;
-            while offset < total && !progress.is_cancelled() {
-                let Ok(mut buf) = free_rx.recv() else { break };
-                let len = (total - offset).min(CHUNK as u64);
-                let clusters = len.div_ceil(cluster).min(chunk_clusters);
-                let t = Instant::now();
-                let result = read_vcns(volume, geo, runs, offset / cluster, clusters, buf.as_mut())
-                    .map(|()| (offset, len as usize, buf));
-                busy += t.elapsed();
-                let failed = result.is_err();
-                if full_tx.send(result).is_err() || failed {
-                    break;
-                }
-                offset += len;
+    let times = std::thread::scope(|s| -> io::Result<(Duration, Duration)> {
+        let (full_tx, full_rx) = sync_channel::<(usize, io::Result<(usize, AlignedBuf)>)>(readers * 2);
+        let mut free = Vec::with_capacity(readers);
+        let mut workers = Vec::with_capacity(readers);
+        for r in 0..readers {
+            let (free_tx, free_rx) = channel::<AlignedBuf>();
+            for _ in 0..2 {
+                free_tx.send(AlignedBuf::new(CHUNK)).expect("canal abierto");
             }
-            busy
-        });
+            free.push(free_tx);
+            let full_tx = full_tx.clone();
+            let own = first.take();
+            workers.push(s.spawn(move || {
+                let mut busy = Duration::ZERO;
+                let volume = match own.map_or_else(|| open_volume(access), Ok) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let _ = full_tx.send((r, Err(e)));
+                        return busy;
+                    }
+                };
+                for k in (r..chunks).step_by(readers) {
+                    if progress.is_cancelled() {
+                        break;
+                    }
+                    let Ok(mut buf) = free_rx.recv() else { break };
+                    let offset = k as u64 * CHUNK as u64;
+                    let clusters = (total - offset).min(CHUNK as u64).div_ceil(cluster).min(chunk_clusters);
+                    let t = Instant::now();
+                    let result =
+                        read_vcns(&volume, geo, runs, offset / cluster, clusters, buf.as_mut()).map(|()| (k, buf));
+                    busy += t.elapsed();
+                    let failed = result.is_err();
+                    if full_tx.send((r, result)).is_err() || failed {
+                        break;
+                    }
+                }
+                busy
+            }));
+        }
+        drop(full_tx);
 
         let mut parse_time = Duration::ZERO;
-        for message in full_rx {
-            let (offset, len, mut buf) = message?;
+        for (r, message) in full_rx {
+            let (k, mut buf) = message?;
             let t = Instant::now();
-            let first = (offset / geo.record) as usize;
+            let offset = k as u64 * CHUNK as u64;
+            let len = (total - offset).min(CHUNK as u64) as usize;
+            let first_rec = (offset / geo.record) as usize;
             let count = len / record;
             let data = &mut buf.as_mut()[..count * record];
-            let slots = &mut recs[first..first + count];
-            let outs: Vec<ParseOut> = pool.install(|| {
+            let slots = &mut recs[first_rec..first_rec + count];
+            let parts: Vec<ParseOut> = pool.install(|| {
                 data.par_chunks_mut(RECORDS_PER_TASK * record)
                     .zip(slots.par_chunks_mut(RECORDS_PER_TASK))
                     .enumerate()
                     .map(|(i, (d, r))| {
                         let mut out = ParseOut::default();
-                        parse_records(d, record, cluster, (first + i * RECORDS_PER_TASK) as u64, r, &mut out);
+                        parse_records(d, record, cluster, (first_rec + i * RECORDS_PER_TASK) as u64, r, &mut out);
                         out
                     })
                     .collect()
             });
-            for out in outs {
-                progress.add(out.files, out.dirs, out.bytes);
-                all.append(out);
+            let mut merged = ParseOut::default();
+            for part in parts {
+                progress.add(part.files, part.dirs, part.bytes);
+                merged.append(part);
             }
+            outs[k] = Some(merged);
             parse_time += t.elapsed();
-            let _ = free_tx.send(buf);
+            let _ = free[r].send(buf);
         }
-        let read_time = reader.join().unwrap_or_default();
+        let read_time = workers.into_iter().map(|w| w.join().unwrap_or_default()).max().unwrap_or_default();
         Ok((read_time, parse_time))
-    })
+    })?;
+    for out in outs.into_iter().flatten() {
+        all.append(out);
+    }
+    Ok(times)
 }
