@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon } from "./Icon";
 
-/** Barra superior: zona para arrastrar la ventana y sus controles. La ventana tiene tamaño fijo (1080 × 720),
+/** Barra superior: zona para arrastrar la ventana y sus controles. La ventana tiene tamaño fijo (1672 × 941),
  * así que Maximizar se muestra desactivado, como en las ventanas fijas de Windows. */
 export function TitleBar() {
   const win = () => getCurrentWindow();
