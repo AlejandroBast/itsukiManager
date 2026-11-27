@@ -46,6 +46,8 @@ export interface ScanProgress {
 export interface ScanInfo {
   root: string;
   used: number;
+  /** Espacio de lo que se pudo leer; lo que falta hasta `used` queda sin contabilizar. */
+  scanned: number;
   total: number | null;
   files: number;
   /** Carpetas que no se pudieron leer (sin permisos de administrador). */
