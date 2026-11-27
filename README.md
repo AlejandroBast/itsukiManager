@@ -38,7 +38,8 @@ grandes, tipos de archivo) para liberar espacio con seguridad.
 
 Medido en el PC de desarrollo (C:, sin administrador): **14,5 GB seguros**, 2,3 GB
 regenerables y 1,6 GB para revisar, más 43,7 GB en sugerencias (Docker, WinSxS,
-hibernación).
+hibernación). La primera limpieza real de lo seguro (con Brave, Discord y otras apps
+abiertas, que se saltaron) liberó **10,1 GB en 15 768 archivos en 13 s**.
 
 Reglas de seguridad al borrar:
 
@@ -46,6 +47,8 @@ Reglas de seguridad al borrar:
 - No toca archivos de OneDrive que solo están en la nube ni otros puntos de reparse.
 - Los patrones de proyectos (`node_modules`, `target`…) no se aplican dentro de
   programas instalados (AppData, Archivos de programa, extensiones de VS Code…).
+- Se saltan las cachés de las aplicaciones abiertas (navegador, Discord, Steam…): ciérralas
+  y repite, o usa `--incluir-abiertas`.
 - Lo que esté en uso o sin permiso se salta y se informa.
 - Pide confirmación y avisa de que el borrado es permanente; con `--papelera` se
   envía a la Papelera.
