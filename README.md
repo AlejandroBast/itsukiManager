@@ -10,15 +10,15 @@ Gestor de almacenamiento para Windows, escrito en Rust. Escanea discos completos
 en segundos y muestra qué ocupa espacio (carpetas de más de 1 GB, archivos
 grandes, tipos de archivo) para liberar espacio con seguridad.
 
-> **Versión 1.1.0:** motores de escaneo nativo y MFT, limpieza inteligente, duplicados,
+> **Versión 1.1.1:** motores de escaneo nativo y MFT, limpieza inteligente, duplicados,
 > historial con avisos, línea de comandos `itsuki` e interfaz de escritorio con bandeja del sistema.
 
 ## Descargar
 
 Descarga la última versión desde [Releases](https://github.com/AlejandroBast/itsukiManager/releases/latest):
 
-- **Instalador**: `ItsukiManager_1.1.0_x64-setup.exe`.
-- **Portable**: `ItsukiManager_1.1.0_x64_portable.zip`. Se descomprime y se abre
+- **Instalador**: `ItsukiManager_1.1.1_x64-setup.exe`.
+- **Portable**: `ItsukiManager_1.1.1_x64_portable.zip`. Se descomprime y se abre
   `ItsukiManager.exe`, sin instalar; incluye también la línea de comandos `itsuki.exe`.
 
 Requiere Windows 10 u 11 de 64 bits.
