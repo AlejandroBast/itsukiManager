@@ -194,6 +194,11 @@ npm run tauri build    # genera el instalador (NSIS)
     al momento en `ajustes.json`, en la misma carpeta que el historial.
   - **Acerca de**: versión, enlace al repositorio, créditos y datos del sistema (permisos, hilos,
     carpeta de datos y el motor que usará cada unidad).
+- La X oculta la ventana: la app sigue en la bandeja (clic en el icono para volver; menú con
+  Abrir y Salir). Si se abre otra vez, se muestra la ventana que ya existe. Mientras está
+  abierta guarda una foto diaria de la unidad del sistema en el historial y revisa cada hora
+  el espacio: avisa con una notificación de Windows cuando una unidad pasa a «Aviso» o
+  «Crítico» (los mismos umbrales que `itsuki avisos`).
 - Todo lo que borra pide confirmación. Desde las listas se envía a la Papelera, y las rutas
   protegidas (Windows, programas, carpetas base del usuario) se rechazan. La limpieza borra de
   forma permanente salvo que se marque «Enviar a la Papelera».
