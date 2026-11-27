@@ -1,4 +1,34 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** Cuenta desde el valor anterior (0 al empezar) hasta `target`, frenando al final. `null` = aún sin dato. */
+export function useCountUp(target: number | null, duration = 800): number {
+  const [value, setValue] = useState(0);
+  const current = useRef(0);
+  useEffect(() => {
+    if (target === null) return;
+    if (prefersReducedMotion()) {
+      current.current = target;
+      setValue(target);
+      return;
+    }
+    const from = current.current;
+    const start = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      current.current = from + (target - from) * (1 - (1 - t) ** 3);
+      setValue(current.current);
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, duration]);
+  return value;
+}
 import { api, isCancelled, type ScanProgress } from "./api";
 
 export type JobPhase = "scan" | "dupes";

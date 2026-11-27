@@ -28,7 +28,10 @@ export function AboutView() {
           <div className="brand-name about-name">
             Itsuki<span>Manager</span>
           </div>
-          <Badge tone="info">Versión {info?.version ?? "…"}</Badge>
+          <div className="about-badges">
+            <Badge tone="info">Versión {info?.version ?? "…"}</Badge>
+            <Badge tone="safe">Código abierto</Badge>
+          </div>
           <p>
             Gestor de almacenamiento para Windows: encuentra lo que ocupa tu disco, los archivos repetidos y la basura que se puede
             limpiar con seguridad.
@@ -102,8 +105,10 @@ export function AboutView() {
           <div className="card about-card">
             <h2 className="card-title">Créditos</h2>
             <p className="about-text">
-              La mascota está inspirada en Itsuki Nakano (de <em>The Quintessential Quintuplets</em>), un personaje de terceros que se usa
-              sin licencia oficial. Revisa sus derechos antes de distribuir la app públicamente.
+              ItsukiManager es de código abierto: su código está en GitHub y cualquiera puede revisarlo, usarlo y mejorarlo.
+            </p>
+            <p className="about-text">
+              La mascota está inspirada en Itsuki Nakano, de <em>The Quintessential Quintuplets</em> (Negi Haruba).
             </p>
           </div>
         </div>
