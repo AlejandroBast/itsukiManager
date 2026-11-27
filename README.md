@@ -189,6 +189,11 @@ npm run tauri build    # genera el instalador (NSIS)
     sola copia (la más antigua).
   - **Limpieza**: temporales y cachés por categoría y nivel de seguridad; lo seguro viene marcado.
     Las cachés de apps abiertas y lo que necesita administrador se saltan.
+  - **Configuración**: motor de escaneo y enlaces duros; en Limpieza, Papelera, apps abiertas y
+    antigüedad mínima de los temporales; en Duplicados, dónde buscar y tamaño mínimo. Se guarda
+    al momento en `ajustes.json`, en la misma carpeta que el historial.
+  - **Acerca de**: versión, enlace al repositorio, créditos y datos del sistema (permisos, hilos,
+    carpeta de datos y el motor que usará cada unidad).
 - Todo lo que borra pide confirmación. Desde las listas se envía a la Papelera, y las rutas
   protegidas (Windows, programas, carpetas base del usuario) se rechazan. La limpieza borra de
   forma permanente salvo que se marque «Enviar a la Papelera».
