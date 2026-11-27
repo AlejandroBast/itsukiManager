@@ -4,8 +4,9 @@ Gestor de almacenamiento para Windows, escrito en Rust. Escanea discos completos
 en segundos y muestra qué ocupa espacio (carpetas de más de 1 GB, archivos
 grandes, tipos de archivo) para liberar espacio con seguridad.
 
-> **Estado:** fases 1 y 2 listas: motor de escaneo nativo, motor MFT de NTFS y
-> línea de comandos `itsuki`. La interfaz gráfica llegará en una fase posterior.
+> **Estado:** fases 1 a 3 listas: motores de escaneo nativo y MFT, limpieza
+> inteligente, duplicados y línea de comandos `itsuki`. La interfaz gráfica llegará en
+> una fase posterior.
 
 ## Qué hace
 
@@ -15,9 +16,44 @@ grandes, tipos de archivo) para liberar espacio con seguridad.
 - **Espacio por tipo**: vídeo, juegos, discos virtuales, caché, instaladores…
 - **Árbol** de carpetas con tamaños y porcentajes.
 - **Informe** de una sola pasada con lo más importante.
-- **Papelera segura**: nunca borra de forma permanente y rechaza rutas críticas
-  (raíz de la unidad, Windows, Archivos de programa, carpetas personales completas…).
+- **Limpieza inteligente**: encuentra temporales, cachés de navegadores, aplicaciones y
+  GPU, descargas de Windows Update, volcados de errores, `node_modules`, compilaciones,
+  cachés de npm/pip/cargo, cachés de Steam y Epic, la Papelera e instaladores viejos,
+  cada uno con su nivel de seguridad, y los limpia sin riesgo.
+- **Duplicados**: compara el contenido real de los archivos (no solo el nombre).
+- **Papelera segura**: `papelera` nunca borra de forma permanente y rechaza rutas
+  críticas (raíz de la unidad, Windows, Archivos de programa, carpetas personales completas…).
 - **Exportación** a CSV (separado por `;`, se abre directo en Excel en español) y JSON.
+
+## Limpieza inteligente
+
+`itsuki limpieza` analiza la unidad y agrupa lo que encuentra por categoría y nivel:
+
+| Nivel | Qué significa | Ejemplos |
+|---|---|---|
+| **Seguro** | Se regenera solo, sin coste | Temporales (de más de 24 h), cachés de navegadores y apps, cachés de sombreadores de la GPU, volcados de errores, descargas de Windows Update |
+| **Regenerable** | Se vuelve a crear o descargar, pero cuesta tiempo | `node_modules`, `target`, `bin/obj`, `__pycache__`, cachés de npm, pip, cargo, Gradle |
+| **Revisar** | Puede contener cosas tuyas | Papelera, descargas incompletas de Steam, instaladores de hace más de 30 días en Descargas |
+| **Consejo** | No se borra desde aquí: se explica cómo hacerlo | Disco virtual de Docker o WSL, WinSxS, `hiberfil.sys`, `Windows.old`, puntos de restauración |
+
+Medido en el PC de desarrollo (C:, sin administrador): **14,5 GB seguros**, 2,3 GB
+regenerables y 1,6 GB para revisar, más 43,7 GB en sugerencias (Docker, WinSxS,
+hibernación).
+
+Reglas de seguridad al borrar:
+
+- Nunca sigue enlaces simbólicos ni uniones: borra el enlace, no lo que hay detrás.
+- No toca archivos de OneDrive que solo están en la nube ni otros puntos de reparse.
+- Los patrones de proyectos (`node_modules`, `target`…) no se aplican dentro de
+  programas instalados (AppData, Archivos de programa, extensiones de VS Code…).
+- Lo que esté en uso o sin permiso se salta y se informa.
+- Pide confirmación y avisa de que el borrado es permanente; con `--papelera` se
+  envía a la Papelera.
+
+`itsuki duplicados` agrupa por tamaño, compara después un hash del principio y del
+final de cada archivo y solo lee entero lo que sigue empatado (xxHash3 de 128 bits).
+Sin ruta revisa tus carpetas personales; se salta los enlaces duros, los archivos en
+la nube, los programas y las bibliotecas de juegos, donde los repetidos son normales.
 
 ## Motores de escaneo
 
@@ -80,6 +116,11 @@ itsuki informe                           # resumen completo
 itsuki papelera "C:\Users\yo\Downloads\viejo.iso"
 itsuki abrir "C:\Program Files (x86)\Steam"
 itsuki info                              # unidades (SSD/HDD), espacio y permisos
+itsuki limpieza                          # basura conocida por categoría y nivel
+itsuki limpieza --limpiar seguro         # limpia todo lo seguro (pide confirmación)
+itsuki limpieza --limpiar temporales,papelera --papelera
+itsuki duplicados                        # duplicados en tus carpetas personales
+itsuki duplicados D:\ --min 10MB --csv duplicados.csv
 ```
 
 Para el motor MFT, abre la terminal como administrador: `itsuki` lo usa solo al
@@ -111,13 +152,13 @@ permisos se omite.
 
 | Carpeta | Contenido |
 |---|---|
-| `crates/itsuki-core` | Núcleo reutilizable: escaneo (`scan`, con los motores `mft`, `native` y `portable`), árbol (`tree`), consultas (`query`), tipos (`types`), acciones seguras (`actions`), sistema (`system`) |
+| `crates/itsuki-core` | Núcleo reutilizable: escaneo (`scan`, con los motores `mft`, `native` y `portable`), árbol (`tree`), consultas (`query`), tipos (`types`), limpieza (`clean`), duplicados (`dupes`), acciones seguras (`actions`), sistema (`system`) |
 | `crates/itsuki-cli` | Programa de línea de comandos `itsuki` |
 
 ## Hoja de ruta
 
 1. ~~Motor de escaneo paralelo y CLI~~
 2. ~~Motor MFT para NTFS~~
-3. Limpieza inteligente: basura conocida (Temp, cachés, `node_modules`, Windows Update…) y duplicados
+3. ~~Limpieza inteligente y duplicados~~
 4. Historial de escaneos, crecimiento por carpeta y avisos de disco lleno
 5. Interfaz gráfica (Tauri + React) con treemap interactivo
