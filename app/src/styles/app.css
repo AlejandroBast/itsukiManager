@@ -1,5 +1,5 @@
 /*
-  Escala: el diseño y la ventana miden 1672 × 941 (1rem = 16 px). Si la ventana tuviera otra proporción,
+  Escala: el diseño mide 1672 × 941 (1rem = 16 px) y la ventana, un 35 % menos (1087 × 612, 1rem ≈ 10,4 px). Si la ventana tuviera otra proporción,
   manda el ancho y la altura que sobra se reparte con --vy (al final del archivo).
 */
 html {

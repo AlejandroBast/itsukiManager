@@ -13,7 +13,7 @@ mod state;
 
 use tauri::{LogicalSize, Manager};
 
-/// La ventana tiene tamaño fijo (1672 × 941, el del diseño, en `tauri.conf.json`). Solo se reduce, sin perder la
+/// La ventana tiene tamaño fijo (1087 × 612, el diseño reducido un 35 %, en `tauri.conf.json`). Solo se reduce, sin perder la
 /// proporción, si no cabe en el área útil de la pantalla (portátiles con escalado alto).
 fn fit_small_screen(window: &tauri::WebviewWindow) {
     let (Ok(Some(monitor)), Ok(size), Ok(factor)) =
