@@ -11,6 +11,7 @@
 //! Detectar es instantáneo porque trabaja sobre el árbol en memoria; el
 //! borrado está en [`delete`].
 
+pub mod apps;
 pub mod delete;
 mod rules;
 
