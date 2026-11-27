@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Args;
+use itsuki_core::clean::apps::{app_owner, running_apps};
 use itsuki_core::clean::{
     DeleteReport, JunkCategory, JunkContext, JunkItem, JunkReport, Safety, clean_item, item_path,
 };
@@ -30,6 +31,9 @@ pub(crate) struct LimpiezaArgs {
     /// Envía a la Papelera en vez de borrar de forma permanente
     #[arg(long)]
     papelera: bool,
+    /// Limpia también las cachés de aplicaciones abiertas (por defecto se saltan)
+    #[arg(long)]
+    incluir_abiertas: bool,
     /// No pedir confirmación
     #[arg(long)]
     si: bool,
@@ -197,6 +201,39 @@ impl Ctx<'_> {
 
     fn run_cleanup(&self, tree: &Tree, selected: &[&JunkItem], a: &LimpiezaArgs) -> Res {
         let st = self.style;
+        // Las cachés de aplicaciones abiertas se saltan: borrarlas en uso puede dejarlas en mal estado.
+        let open = if a.incluir_abiertas { Default::default() } else { running_apps() };
+        let owner_open = |i: &JunkItem| {
+            matches!(i.category, JunkCategory::BrowserCache | JunkCategory::AppCache | JunkCategory::GameCache)
+                .then(|| item_path(tree, i).and_then(|p| app_owner(&p)))
+                .flatten()
+                .filter(|o| open.contains(o))
+        };
+        let mut busy: Vec<(String, u64)> = Vec::new();
+        let mut keep: Vec<&JunkItem> = Vec::new();
+        for &i in selected {
+            match owner_open(i) {
+                Some(owner) => match busy.iter_mut().find(|(o, _)| *o == owner) {
+                    Some(b) => b.1 += i.bytes,
+                    None => busy.push((owner, i.bytes)),
+                },
+                None => keep.push(i),
+            }
+        }
+        if !busy.is_empty() {
+            busy.sort_by_key(|x| std::cmp::Reverse(x.1));
+            let list: Vec<String> = busy.iter().map(|(o, b)| format!("{o} ({})", size(*b))).collect();
+            println!("\n  {} {}", st.yellow("Se saltan las cachés de aplicaciones abiertas:"), list.join(", "));
+            println!(
+                "  {}",
+                st.dim("Ciérralas y vuelve a ejecutar la limpieza para incluirlas (o usa --incluir-abiertas).")
+            );
+        }
+        let selected = keep;
+        if selected.is_empty() {
+            println!("\n  Nada más que limpiar.");
+            return Ok(());
+        }
         let total: u64 = selected.iter().map(|i| i.bytes).sum();
         println!(
             "\n  {} {} ubicaciones · {}",
@@ -232,7 +269,7 @@ impl Ctx<'_> {
 
         let mut done = DeleteReport::default();
         let mut failed = Vec::new();
-        for item in selected {
+        for item in &selected {
             match clean_item(tree, item, a.papelera) {
                 Ok(r) => done.merge(r),
                 Err(e) => failed.push(format!("{}: {e}", item.label)),
