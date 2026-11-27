@@ -5,8 +5,8 @@ en segundos y muestra qué ocupa espacio (carpetas de más de 1 GB, archivos
 grandes, tipos de archivo) para liberar espacio con seguridad.
 
 > **Estado:** fases 1 a 4 listas: motores de escaneo nativo y MFT, limpieza
-> inteligente, duplicados, historial con avisos y línea de comandos `itsuki`. La
-> siguiente fase es la interfaz gráfica.
+> inteligente, duplicados, historial con avisos y línea de comandos `itsuki`. En curso:
+> la interfaz de escritorio (inicio, análisis, archivos grandes, duplicados y limpieza listos).
 
 ## Qué hace
 
@@ -163,6 +163,39 @@ escanear una unidad completa (o fuérzalo con `--motor mft`).
 Opciones comunes: `--metrica disco|datos`, `--hilos N`, `--motor auto|mft|nativo|portable`,
 `--contar-enlaces-duros`, `-q` (sin progreso). Ayuda completa: `itsuki --help`.
 
+## Interfaz de escritorio
+
+La app está en `app/`: React + TypeScript con Vite para la interfaz y Tauri 2
+(`app/src-tauri`) como capa fina que llama al núcleo. El diseño de referencia está en
+[`docs/ui/mockup.png`](docs/ui/mockup.png).
+
+```powershell
+cd app
+npm install
+npm run tauri dev      # abre la app con recarga en caliente
+npm run tauri build    # genera el instalador (NSIS)
+```
+
+- La ventana tiene un tamaño fijo de 1672 × 941, el del diseño (1 rem = 16 px): no se
+  redimensiona ni se maximiza. Si la pantalla es más pequeña (por ejemplo, un portátil con
+  escalado alto), se reduce sin perder la proporción.
+- La pantalla de inicio muestra datos reales: la unidad del sistema, el reparto del
+  espacio, las carpetas más grandes y lo que se puede liberar.
+- Cada sección funciona con botones, sin terminal. El escaneo de la unidad se hace una vez y
+  lo reutilizan todas las secciones; los trabajos largos muestran el progreso y se pueden cancelar.
+  - **Analizar disco**: árbol de las carpetas de 500 MB, 1, 5 o 10 GB o más de cada unidad.
+  - **Archivos grandes**: los 50, 100 o 200 archivos que más ocupan.
+  - **Duplicados**: compara el contenido en las carpetas personales o en una unidad y deja una
+    sola copia (la más antigua).
+  - **Limpieza**: temporales y cachés por categoría y nivel de seguridad; lo seguro viene marcado.
+    Las cachés de apps abiertas y lo que necesita administrador se saltan.
+- Todo lo que borra pide confirmación. Desde las listas se envía a la Papelera, y las rutas
+  protegidas (Windows, programas, carpetas base del usuario) se rechazan. La limpieza borra de
+  forma permanente salvo que se marque «Enviar a la Papelera».
+- Las imágenes de la mascota están inspiradas en Itsuki Nakano, personaje de terceros:
+  el paquete de assets no concede licencia sobre el personaje, así que conviene revisar
+  los derechos antes de distribuir la app públicamente.
+
 ## Compilar y probar
 
 Requisitos: [Rust](https://rustup.rs) estable y Visual Studio Build Tools (C++).
@@ -188,6 +221,8 @@ permisos se omite.
 |---|---|
 | `crates/itsuki-core` | Núcleo reutilizable: escaneo (`scan`, con los motores `mft`, `native` y `portable`), árbol (`tree`), consultas (`query`), tipos (`types`), limpieza (`clean`), duplicados (`dupes`), historial (`history`), avisos (`alerts`), acciones seguras (`actions`), sistema (`system`) |
 | `crates/itsuki-cli` | Programa de línea de comandos `itsuki` |
+| `app` | Interfaz de escritorio (React + TypeScript + Vite) y `app/src-tauri` (Tauri 2) |
+| `docs/ui` | Mockup de referencia de la interfaz |
 
 ## Hoja de ruta
 

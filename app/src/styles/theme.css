@@ -1,0 +1,33 @@
+/*
+  Paleta de ItsukiManager.
+  Las variables del primer bloque vienen del theme.css del paquete de assets;
+  el resto completa la paleta del documento de diseño.
+*/
+:root {
+  --background: #211319;
+  --sidebar: #301c24;
+  --surface: #321e26;
+  --border: #50303b;
+  --primary: #d94c60;
+  --primary-hover: #b93646;
+  --coral: #ff7888;
+  --accent: #ffd054;
+  --text: #fff4f2;
+  --muted: #ccb9be;
+
+  --violet: #9671df;
+  --blue: #5488e8;
+  --gray: #a8a5ad;
+  --icon: #fbe8e6;
+
+  --success: #6fd3a0;
+  --warning: #ffd054;
+  --danger: #ff6b7d;
+
+  --border-soft: rgba(80, 48, 59, 0.75);
+  --shadow-card: 0 0.5rem 1.6rem rgba(0, 0, 0, 0.22);
+  --radius-card: 0.95rem;
+  --radius-control: 0.8rem;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
