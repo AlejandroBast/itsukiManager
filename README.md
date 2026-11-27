@@ -199,6 +199,8 @@ npm run tauri build    # genera el instalador (NSIS)
 - Cada sección funciona con botones, sin terminal. El escaneo de la unidad se hace una vez y
   lo reutilizan todas las secciones; los trabajos largos muestran el progreso y se pueden cancelar.
   - **Analizar disco**: árbol de las carpetas de 500 MB, 1, 5 o 10 GB o más de cada unidad.
+    Cada nivel cuadra con el total: al final van los archivos sueltos y las carpetas pequeñas, y
+    lo «sin contabilizar» (lo que no se puede leer sin permisos de administrador).
   - **Archivos grandes**: los 50, 100 o 200 archivos que más ocupan.
   - **Duplicados**: compara el contenido en las carpetas personales o en una unidad y deja una
     sola copia (la más antigua).

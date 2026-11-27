@@ -28,6 +28,13 @@ function withoutFolder(view: FoldersView, gone: FolderItem): FoldersView {
   };
 }
 
+/** Por debajo de esto el resto de un nivel no se muestra (redondeos, carpetas vacías). */
+const MIN_REST = 1024 ** 2;
+
+type Row =
+  | { kind: "folder"; f: FolderItem; depth: number; order: number }
+  | { kind: "rest"; key: string; label: string; hint?: string; bytes: number; depth: number; order: number };
+
 interface Props {
   drives: DiskInfo[];
   systemRoot: string;
@@ -71,15 +78,39 @@ export function AnalyzeView({ drives, systemRoot, onChanged }: Props) {
     return map;
   }, [data]);
 
-  // `order`: posición entre sus hermanas (la cascada empieza de nuevo al desplegar una carpeta).
-  const rows: { f: FolderItem; depth: number; order: number }[] = [];
-  const walk = (parent: number, depth: number) => {
-    for (const [order, f] of (children.get(parent) ?? []).entries()) {
-      rows.push({ f, depth, order });
-      if (open.has(f.id)) walk(f.id, depth + 1);
+  const minLabel = MINS.find((o) => o.value === min)?.label.replace(" o más", "") ?? "";
+
+  // `order`: posición entre sus hermanas (la cascada empieza de nuevo al desplegar una carpeta). Tras las carpetas
+  // grandes de cada nivel va lo que no suman (archivos sueltos y carpetas pequeñas), para que el nivel cuadre.
+  const rows: Row[] = [];
+  const walk = (parent: number, total: number, depth: number) => {
+    const list = children.get(parent) ?? [];
+    for (const [order, f] of list.entries()) {
+      rows.push({ kind: "folder", f, depth, order });
+      if (open.has(f.id)) walk(f.id, f.bytes, depth + 1);
+    }
+    const rest = total - list.reduce((acc, f) => acc + f.bytes, 0);
+    if (rest >= MIN_REST) {
+      const label = parent === 0 ? "Archivos sueltos y carpetas pequeñas" : "Archivos y carpetas pequeñas";
+      const hint = `Archivos que están directamente aquí y carpetas de menos de ${minLabel}.`;
+      rows.push({ kind: "rest", key: `rest-${parent}`, label, hint, bytes: rest, depth, order: list.length });
     }
   };
-  walk(0, 0);
+  if (data) {
+    walk(0, data.scan.scanned, 0);
+    const unaccounted = data.scan.total ? data.scan.used - data.scan.scanned : 0;
+    if (unaccounted >= MIN_REST) {
+      rows.push({
+        kind: "rest",
+        key: "unaccounted",
+        label: "Sin contabilizar",
+        hint: "Espacio que Windows da como usado pero no se pudo leer: carpetas sin acceso, puntos de restauración y metadatos de NTFS. Como administrador se lee casi todo.",
+        bytes: unaccounted,
+        depth: 0,
+        order: (children.get(0)?.length ?? 0) + 1,
+      });
+    }
+  }
 
   const toggle = (id: number) =>
     setOpen((prev) => {
@@ -107,7 +138,6 @@ export function AnalyzeView({ drives, systemRoot, onChanged }: Props) {
     hint: d.name ? `${d.name} · ${formatSize(d.used)} usados de ${formatSize(d.total)}` : undefined,
   }));
   const used = data?.scan.used || 1;
-  const minLabel = MINS.find((o) => o.value === min)?.label.replace(" o más", "") ?? "";
 
   return (
     <section className="page rise" aria-label="Analizar disco">
@@ -193,10 +223,10 @@ export function AnalyzeView({ drives, systemRoot, onChanged }: Props) {
             </button>
           </EmptyState>
         )}
-        {data && rows.length === 0 && !busy && (
+        {data && !children.has(0) && !busy && (
           <EmptyState title="Nada tan grande" text={`No hay carpetas de ${minLabel} o más en ${driveLabel(data.scan.root)}.`} />
         )}
-        {data && rows.length > 0 && (
+        {data && children.has(0) && (
           <div className="page-scroll" role="tree" aria-label="Carpetas grandes">
             <div className="list-head cols-folders" aria-hidden="true">
               <span>Carpeta</span>
@@ -205,7 +235,31 @@ export function AnalyzeView({ drives, systemRoot, onChanged }: Props) {
               <span className="num">Disco</span>
               <span />
             </div>
-            {rows.map(({ f, depth, order }) => {
+            {rows.map((row) => {
+              if (row.kind === "rest") {
+                return (
+                  <div
+                    key={row.key}
+                    className={row.key === "unaccounted" ? "row cols-folders rest unaccounted stagger" : "row cols-folders rest stagger"}
+                    style={{ "--i": row.order } as CSSProperties}
+                    role="treeitem"
+                    title={row.hint}
+                  >
+                    <div className="cell-name" style={{ paddingLeft: `${row.depth * 1.6}rem` }}>
+                      <span className="expander" />
+                      <Icon name={row.key === "unaccounted" ? "warning" : "files"} className="row-icon" />
+                      <span className="name">{row.label}</span>
+                    </div>
+                    <span className="meter" aria-hidden="true">
+                      <span style={{ width: `${Math.max(1, (row.bytes / used) * 100)}%` }} />
+                    </span>
+                    <span className="num">{formatSize(row.bytes)}</span>
+                    <span className="num muted">{formatPercent(row.bytes, used)}</span>
+                    <span />
+                  </div>
+                );
+              }
+              const { f, depth, order } = row;
               const kids = children.has(f.id);
               const isOpen = open.has(f.id);
               return (

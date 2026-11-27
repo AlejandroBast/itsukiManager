@@ -32,6 +32,8 @@ pub struct ScanInfo {
     root: String,
     /// Espacio usado de la unidad (lo escaneado, si no es una unidad entera).
     used: u64,
+    /// Espacio de todo lo que se pudo leer (la diferencia con `used` queda sin contabilizar).
+    scanned: u64,
     total: Option<u64>,
     files: u64,
     /// Carpetas que no se pudieron leer (sin permisos de administrador).
@@ -74,6 +76,7 @@ fn scan_info(tree: &Tree) -> ScanInfo {
     ScanInfo {
         root: tree.root_path().display().to_string(),
         used: volume.as_ref().map_or(tree.node(ROOT).alloc, |v| v.used()),
+        scanned: tree.node(ROOT).alloc,
         total: volume.map(|v| v.total),
         files: s.files,
         denied: s.denied,

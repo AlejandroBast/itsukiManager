@@ -293,6 +293,32 @@
   background: linear-gradient(90deg, #f65d70 0%, #ff7888 100%);
 }
 
+/* Filas de resto en Analizar disco: lo que no suman las carpetas grandes de un nivel. */
+.row.rest {
+  color: var(--muted);
+}
+
+.row.rest .name {
+  padding-right: 0.2em;
+  font-style: italic;
+}
+
+.row.rest .row-icon {
+  color: var(--gray);
+}
+
+.row.rest .meter > span {
+  background: var(--gray);
+}
+
+.row.unaccounted .row-icon {
+  color: var(--accent);
+}
+
+.row.unaccounted .meter > span {
+  background: repeating-linear-gradient(135deg, var(--accent) 0 0.35rem, rgba(255, 208, 84, 0.45) 0.35rem 0.7rem);
+}
+
 /* ---------- Controles ---------- */
 
 .btn-xs {
