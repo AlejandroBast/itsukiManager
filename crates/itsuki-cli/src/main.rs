@@ -1,5 +1,6 @@
 //! `itsuki`: línea de comandos de itsukiManager.
 
+mod limpieza;
 mod ui;
 
 use std::borrow::Cow;
@@ -100,6 +101,10 @@ enum Command {
     /// Compara los motores de escaneo sobre la misma ruta (diagnóstico)
     #[command(hide = true)]
     Comparar(RutaArgs),
+    /// Busca basura conocida (temporales, cachés, node_modules…) y la limpia con seguridad
+    Limpieza(limpieza::LimpiezaArgs),
+    /// Busca archivos duplicados comparando su contenido
+    Duplicados(limpieza::DuplicadosArgs),
 }
 
 #[derive(Args)]
@@ -206,6 +211,8 @@ fn main() -> ExitCode {
         Command::Abrir { ruta } => actions::reveal_in_explorer(ruta).map_err(Into::into),
         Command::Info => ctx.info(),
         Command::Comparar(a) => ctx.comparar(a),
+        Command::Limpieza(a) => ctx.limpieza(a),
+        Command::Duplicados(a) => ctx.duplicados(a),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -601,6 +608,18 @@ impl Ctx<'_> {
 
         println!("\n  {}", st.title("Espacio por tipo"));
         self.print_types(&tree, 8, 0);
+
+        let junk = itsuki_core::find_junk(&tree, &itsuki_core::JunkContext::from_env());
+        let safe = junk.total(itsuki_core::Safety::Safe);
+        let regen = junk.total(itsuki_core::Safety::Regenerable);
+        if safe + regen > 0 {
+            println!(
+                "\n  {} {} se pueden liberar de forma segura y {} son regenerables (itsuki limpieza)",
+                st.title("Limpieza:"),
+                st.bold(&size(safe)),
+                st.bold(&size(regen))
+            );
+        }
         Ok(())
     }
 
