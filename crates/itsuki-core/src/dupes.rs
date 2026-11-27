@@ -38,15 +38,18 @@ thread_local! {
 pub struct DupOptions {
     /// Tamaño mínimo de los archivos a comparar.
     pub min_size: u64,
-    /// Incluir Windows, Archivos de programa, ProgramData, AppData, node_modules y .git.
+    /// Incluir Windows, Archivos de programa, ProgramData, AppData, node_modules y las
+    /// carpetas ocultas que empiezan por punto (.git, .vscode, .rustup…).
     pub include_system: bool,
-    /// Hilos de lectura (0 = automático: menos en discos mecánicos).
+    /// Si no está vacío, solo se buscan duplicados dentro de estas carpetas.
+    pub include_roots: Vec<PathBuf>,
+    /// Hilos de lectura (0 = automático: uno en discos mecánicos).
     pub threads: usize,
 }
 
 impl Default for DupOptions {
     fn default() -> Self {
-        DupOptions { min_size: 1 << 20, include_system: false, threads: 0 }
+        DupOptions { min_size: 1 << 20, include_system: false, include_roots: Vec::new(), threads: 0 }
     }
 }
 
@@ -121,13 +124,17 @@ pub fn find_duplicates(tree: &Tree, opts: &DupOptions, progress: &DupProgress) -
     let threads = if opts.threads > 0 {
         opts.threads
     } else if crate::system::volume_of(tree.root_path()).and_then(|v| v.seek_penalty).unwrap_or(false) {
-        2
+        // En discos mecánicos, leer dos archivos a la vez obliga a mover el cabezal sin parar.
+        1
     } else {
         crate::scan::default_threads()
     };
     let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().map_err(io::Error::other)?;
 
-    let excluded = if opts.include_system { vec![false; tree.len()] } else { excluded_subtrees(tree) };
+    let mut excluded = if opts.include_system { vec![false; tree.len()] } else { excluded_subtrees(tree) };
+    if !opts.include_roots.is_empty() {
+        restrict_to(tree, &opts.include_roots, &mut excluded);
+    }
     let skip = flags::DIR | flags::HARDLINK | flags::CLOUD | flags::REPARSE;
     let mut candidates: Vec<NodeId> = (1..tree.len() as NodeId)
         .filter(|&id| {
@@ -262,6 +269,24 @@ fn full_hash(path: &PathBuf, progress: &DupProgress) -> io::Result<u128> {
     })
 }
 
+/// Excluye todo lo que no esté dentro de `roots`.
+fn restrict_to(tree: &Tree, roots: &[PathBuf], excluded: &mut [bool]) {
+    let mut inside = vec![false; tree.len()];
+    for root in roots {
+        if let Some(id) = tree.find(root) {
+            inside[id as usize] = true;
+        }
+    }
+    for id in 0..tree.len() {
+        if id > 0 && inside[tree.node(id as NodeId).parent as usize] {
+            inside[id] = true;
+        }
+        if !inside[id] {
+            excluded[id] = true;
+        }
+    }
+}
+
 /// Marca las carpetas donde los duplicados son normales y no se deben tocar.
 fn excluded_subtrees(tree: &Tree) -> Vec<bool> {
     let system: Vec<String> = ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData"]
@@ -269,7 +294,21 @@ fn excluded_subtrees(tree: &Tree) -> Vec<bool> {
         .filter_map(std::env::var_os)
         .map(|v| v.to_string_lossy().trim_end_matches('\\').to_lowercase())
         .collect();
-    let names = ["node_modules", ".git", "AppData", "$Recycle.Bin", "System Volume Information", "WindowsApps"];
+    // Programas, juegos (sus archivos repetidos son normales) y datos internos del sistema.
+    let names = [
+        "node_modules",
+        "AppData",
+        "$Recycle.Bin",
+        "System Volume Information",
+        "WindowsApps",
+        "Program Files",
+        "Program Files (x86)",
+        "steamapps",
+        "SteamLibrary",
+        "XboxGames",
+        "Epic Games",
+        "Riot Games",
+    ];
     let mut excluded = vec![false; tree.len()];
     for id in 1..tree.len() as NodeId {
         let node = tree.node(id);
@@ -282,7 +321,8 @@ fn excluded_subtrees(tree: &Tree) -> Vec<bool> {
         }
         let name = tree.name_bytes(id);
         let metafile = node.parent == ROOT && name.first() == Some(&b'$');
-        let by_name = names.iter().any(|n| name.eq_ignore_ascii_case(n.as_bytes()));
+        // Carpetas ocultas de herramientas (.git, .vscode, .rustup, .cache…).
+        let by_name = name.first() == Some(&b'.') || names.iter().any(|n| name.eq_ignore_ascii_case(n.as_bytes()));
         let by_path = node.parent == ROOT && system.contains(&tree.path(id).to_string_lossy().to_lowercase());
         excluded[id as usize] = metafile || by_name || by_path;
     }

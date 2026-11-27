@@ -44,6 +44,25 @@ const CHROMIUM_CACHES: [&str; 8] = [
     "shadercache",
 ];
 
+/// Partes de ruta donde viven programas instalados: los patrones de proyectos
+/// (node_modules, target, __pycache__…) no se aplican ahí, porque esas
+/// carpetas forman parte del programa y borrarlas lo rompería.
+const APP_PLACES: [&str; 7] =
+    ["\\appdata\\", "\\.cache\\", "\\.vscode\\", "\\.cargo\\", "\\.rustup\\", "\\.codex\\", "\\resources\\app"];
+
+/// Carpetas del sistema y de programas (en minúsculas), desde las variables de entorno.
+fn system_prefixes() -> Vec<String> {
+    ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData"]
+        .iter()
+        .filter_map(std::env::var_os)
+        .map(|v| format!("{}\\", v.to_string_lossy().trim_end_matches('\\').to_lowercase()))
+        .collect()
+}
+
+fn in_app_place(lower_path: &str, prefixes: &[String]) -> bool {
+    prefixes.iter().any(|p| lower_path.starts_with(p.as_str())) || APP_PLACES.iter().any(|p| lower_path.contains(p))
+}
+
 const INSTALLER_EXTS: [&str; 9] = ["exe", "msi", "msix", "msixbundle", "appx", "iso", "zip", "7z", "rar"];
 
 fn eq(a: &[u8], b: &str) -> bool {
@@ -55,6 +74,7 @@ pub fn find_junk(tree: &Tree, ctx: &JunkContext) -> JunkReport {
     let n = tree.len();
     let mut covered = vec![false; n];
     let mut items = Vec::new();
+    let prefixes = system_prefixes();
     let is_covered = |covered: &[bool], mut id: NodeId| loop {
         if covered[id as usize] {
             return true;
@@ -73,7 +93,7 @@ pub fn find_junk(tree: &Tree, ctx: &JunkContext) -> JunkReport {
             continue;
         }
         let (bytes, files) = measure(tree, id, &loc.action, ctx.now);
-        if bytes == 0 && files == 0 {
+        if bytes == 0 || bytes < ctx.min_item {
             continue;
         }
         covered[id as usize] = true;
@@ -190,9 +210,9 @@ pub fn find_junk(tree: &Tree, ctx: &JunkContext) -> JunkReport {
             }
             continue;
         }
-        let Some((category, safety, action, label)) = match_dir(tree, id) else { continue };
+        let Some((category, safety, action, label)) = match_dir(tree, id, &prefixes) else { continue };
         let (bytes, files) = measure(tree, id, &action, ctx.now);
-        if bytes == 0 {
+        if bytes == 0 || bytes < ctx.min_item {
             continue;
         }
         covered[id as usize] = true;
@@ -231,7 +251,7 @@ fn measure(tree: &Tree, id: NodeId, action: &Action, now: i64) -> (u64, u64) {
 }
 
 /// Reconoce carpetas de basura por su nombre y su entorno.
-fn match_dir(tree: &Tree, id: NodeId) -> Option<(C, S, Action, &'static str)> {
+fn match_dir(tree: &Tree, id: NodeId, prefixes: &[String]) -> Option<(C, S, Action, &'static str)> {
     let name = tree.name_bytes(id);
     let parent = tree.node(id).parent;
     let pname = tree.name_bytes(parent);
@@ -245,26 +265,34 @@ fn match_dir(tree: &Tree, id: NodeId) -> Option<(C, S, Action, &'static str)> {
     let lower_path = || tree.path(id).to_string_lossy().to_lowercase();
     let contents = Action::Contents { min_age: 0 };
 
-    // Proyectos de desarrollo: todo se regenera con el gestor de paquetes o al compilar.
-    if eq(name, "node_modules") && sibling(false, "package.json") {
-        return Some((C::DevDependencies, S::Regenerable, Action::Folder, "node_modules"));
-    }
-    if eq(name, "target") && sibling(false, "Cargo.toml") {
-        return Some((C::BuildOutputs, S::Regenerable, Action::Folder, "Compilación de Rust (target)"));
-    }
-    if ["__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"].iter().any(|n| eq(name, n)) {
-        return Some((C::BuildOutputs, S::Regenerable, Action::Folder, "Caché de Python"));
-    }
-    if (eq(name, "bin") || eq(name, "obj")) && sibling_ext(&["csproj", "vbproj", "fsproj"]) {
-        return Some((C::BuildOutputs, S::Regenerable, Action::Folder, "Compilación de .NET (bin/obj)"));
-    }
-    if eq(name, "build") && (sibling(false, "build.gradle") || sibling(false, "build.gradle.kts")) {
-        return Some((C::BuildOutputs, S::Regenerable, Action::Folder, "Compilación de Gradle"));
-    }
-    if [".next", ".nuxt", ".svelte-kit", ".parcel-cache", ".turbo", ".angular"].iter().any(|n| eq(name, n))
+    // Proyectos de desarrollo: todo se regenera con el gestor de paquetes o al
+    // compilar. Nunca dentro de programas instalados.
+    let project = if eq(name, "node_modules") && sibling(false, "package.json") {
+        Some((C::DevDependencies, "node_modules"))
+    } else if eq(name, "target") && sibling(false, "Cargo.toml") {
+        Some((C::BuildOutputs, "Compilación de Rust (target)"))
+    } else if ["__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"].iter().any(|n| eq(name, n)) {
+        Some((C::BuildOutputs, "Caché de Python"))
+    } else if (eq(name, "bin") || eq(name, "obj")) && sibling_ext(&["csproj", "vbproj", "fsproj"]) {
+        Some((C::BuildOutputs, "Compilación de .NET (bin/obj)"))
+    } else if eq(name, "build") && (sibling(false, "build.gradle") || sibling(false, "build.gradle.kts")) {
+        Some((C::BuildOutputs, "Compilación de Gradle"))
+    } else if [".next", ".nuxt", ".svelte-kit", ".parcel-cache", ".turbo", ".angular"].iter().any(|n| eq(name, n))
         && sibling(false, "package.json")
     {
-        return Some((C::BuildOutputs, S::Regenerable, Action::Folder, "Caché de compilación web"));
+        Some((C::BuildOutputs, "Caché de compilación web"))
+    } else {
+        None
+    };
+    if let Some((category, label)) = project {
+        let path = lower_path();
+        // Las cachés de Python de una instalación (Lib, site-packages) son parte del programa.
+        let python_install =
+            label == "Caché de Python" && (path.contains("\\lib\\") || path.contains("\\site-packages\\"));
+        if in_app_place(&path, prefixes) || python_install {
+            return None;
+        }
+        return Some((category, S::Regenerable, Action::Folder, label));
     }
 
     // Lanzadores de juegos.
@@ -384,6 +412,24 @@ mod tests {
         let r = find_junk(&t, &JunkContext::empty(1_800_000_000));
         assert_eq!(labels(&r), vec![("node_modules", 12 * MB), ("Compilación de Rust (target)", 30 * MB)]);
         assert_eq!(r.items[0].action, Action::Folder);
+    }
+
+    #[test]
+    fn programas_instalados_no_son_proyectos() {
+        // node_modules dentro de un programa (VS Code en AppData\Local\Programs): no se toca.
+        let t = tree_from(
+            &[
+                (0, "AppData", true, 0),       // 1
+                (1, "Programs", true, 0),      // 2
+                (2, "app", true, 0),           // 3
+                (3, "package.json", false, 0), // 4
+                (3, "node_modules", true, 0),  // 5
+                (5, "lib.js", false, 50 * MB), // 6
+            ],
+            None,
+        );
+        let r = find_junk(&t, &JunkContext::empty(1_800_000_000));
+        assert!(r.items.is_empty(), "{:?}", labels(&r));
     }
 
     #[test]

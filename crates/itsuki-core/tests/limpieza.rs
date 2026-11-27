@@ -13,7 +13,9 @@ struct TempDir(PathBuf);
 impl TempDir {
     fn new(name: &str) -> TempDir {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let p = std::env::temp_dir().join(format!("itsuki-prueba-{name}-{}-{nanos}", std::process::id()));
+        // target\tmp de cargo: fuera de AppData, donde los patrones de proyectos sí se aplican.
+        let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+        let p = base.join(format!("itsuki-prueba-{name}-{}-{nanos}", std::process::id()));
         fs::create_dir_all(&p).unwrap();
         TempDir(p)
     }
@@ -134,7 +136,10 @@ fn node_modules_se_borra_entero() {
     let report = find_junk(&tree, &JunkContext::empty(now()));
     assert_eq!(report.items.len(), 1, "el node_modules anidado no se cuenta aparte");
     let item = &report.items[0];
-    assert_eq!((item.label, item.category, item.safety), ("node_modules", JunkCategory::DevDependencies, Safety::Regenerable));
+    assert_eq!(
+        (item.label, item.category, item.safety),
+        ("node_modules", JunkCategory::DevDependencies, Safety::Regenerable)
+    );
 
     let done = clean_item(&tree, item, false).unwrap();
     assert_eq!(done.files, 2);
@@ -175,7 +180,7 @@ fn duplicados_por_contenido() {
     t.write("g.bin", &data[..500]); // por debajo del mínimo
 
     let tree = scan_all(&t.0);
-    let opts = DupOptions { min_size: 1000, include_system: true, threads: 2 };
+    let opts = DupOptions { min_size: 1000, include_system: true, include_roots: Vec::new(), threads: 2 };
     let report = find_duplicates(&tree, &opts, &DupProgress::new()).unwrap();
     assert_eq!(report.groups.len(), 1);
     let names: Vec<String> = report.groups[0].files.iter().map(|&id| tree.name_lossy(id).into_owned()).collect();

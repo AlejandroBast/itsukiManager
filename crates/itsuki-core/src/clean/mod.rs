@@ -229,6 +229,8 @@ pub struct JunkContext {
     pub downloads_min_age: i64,
     /// Tamaño mínimo de los instaladores de Descargas.
     pub downloads_min_size: u64,
+    /// Los hallazgos más pequeños que esto no se muestran (ruido).
+    pub min_item: u64,
     pub locations: Vec<Location>,
     /// Carpeta de descargas del usuario.
     pub downloads: Option<PathBuf>,
@@ -381,6 +383,7 @@ impl JunkContext {
             temp_min_age: temp_age,
             downloads_min_age: 30 * DAY,
             downloads_min_size: 50 << 20,
+            min_item: 64 << 10,
             locations,
             downloads: profile.map(|p| p.join("Downloads")),
             windows: windir,
@@ -394,6 +397,7 @@ impl JunkContext {
             temp_min_age: DAY,
             downloads_min_age: 30 * DAY,
             downloads_min_size: 50 << 20,
+            min_item: 0,
             locations: Vec::new(),
             downloads: None,
             windows: None,
