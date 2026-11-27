@@ -1,5 +1,6 @@
 import type { DiskInfo } from "../api";
 import { formatCount, formatSize } from "../format";
+import { useCountUp } from "../hooks";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
 /** Tarjeta de la unidad del sistema y botón "Analizar disco". */
 export function DiskCard({ disk, busy, scannedFiles, onAnalyze }: Props) {
   const pct = disk && disk.total > 0 ? Math.round((disk.used / disk.total) * 100) : 0;
+  const used = useCountUp(disk?.used ?? null);
+  const shownPct = Math.round(useCountUp(disk ? pct : null));
   return (
     <div className="disk-row rise" style={{ animationDelay: "60ms" }}>
       <section className="card disk-card" aria-label="Almacenamiento">
@@ -24,11 +27,11 @@ export function DiskCard({ disk, busy, scannedFiles, onAnalyze }: Props) {
             </div>
             <div>
               <div className="disk-amount">
-                {disk ? formatSize(disk.used) : "—"}
+                {disk ? formatSize(used) : "—"}
                 <span className="total">/ {disk ? formatSize(disk.total) : "—"}</span>
                 <Icon name="chevron" />
               </div>
-              <div className="disk-percent">{disk ? `${pct}%` : "—"}</div>
+              <div className="disk-percent">{disk ? `${shownPct}%` : "—"}</div>
             </div>
           </div>
           <div

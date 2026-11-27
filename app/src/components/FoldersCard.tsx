@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useState } from "react";
 import type { FolderRow } from "../api";
 import { formatSize } from "../format";
@@ -22,7 +23,7 @@ export function FoldersCard({ folders, onSeeAll }: Props) {
       <ul className="folder-list">
         {folders
           ? folders.map((f, i) => (
-              <li key={f.path}>
+              <li key={f.path} className="stagger" style={{ "--i": i } as CSSProperties}>
                 <button
                   type="button"
                   className={i === selected ? "folder-row selected" : "folder-row"}

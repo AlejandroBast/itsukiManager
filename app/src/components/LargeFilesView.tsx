@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { api, type DiskInfo, type FileItem, type FilesView } from "../api";
 import { driveLabel, formatCount, formatDate, formatPercent, formatSize } from "../format";
@@ -145,8 +146,8 @@ export function LargeFilesView({ drives, systemRoot, onChanged }: Props) {
               <span className="num">Tamaño</span>
               <span />
             </div>
-            {data.files.map((f) => (
-              <div key={f.path} className="row cols-files">
+            {data.files.map((f, i) => (
+              <div key={f.path} className="row cols-files stagger" style={{ "--i": i } as CSSProperties}>
                 <div className="cell-file">
                   <span className="name" title={f.name}>
                     {f.name}

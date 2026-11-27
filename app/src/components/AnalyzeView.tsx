@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type DiskInfo, type FolderItem, type FoldersView } from "../api";
 import { driveLabel, formatCount, formatDuration, formatPercent, formatSize } from "../format";
@@ -70,10 +71,11 @@ export function AnalyzeView({ drives, systemRoot, onChanged }: Props) {
     return map;
   }, [data]);
 
-  const rows: { f: FolderItem; depth: number }[] = [];
+  // `order`: posición entre sus hermanas (la cascada empieza de nuevo al desplegar una carpeta).
+  const rows: { f: FolderItem; depth: number; order: number }[] = [];
   const walk = (parent: number, depth: number) => {
-    for (const f of children.get(parent) ?? []) {
-      rows.push({ f, depth });
+    for (const [order, f] of (children.get(parent) ?? []).entries()) {
+      rows.push({ f, depth, order });
       if (open.has(f.id)) walk(f.id, depth + 1);
     }
   };
@@ -203,11 +205,15 @@ export function AnalyzeView({ drives, systemRoot, onChanged }: Props) {
               <span className="num">Disco</span>
               <span />
             </div>
-            {rows.map(({ f, depth }) => {
+            {rows.map(({ f, depth, order }) => {
               const kids = children.has(f.id);
               const isOpen = open.has(f.id);
               return (
-                <div key={f.id} className="row cols-folders" role="treeitem" aria-expanded={kids ? isOpen : undefined}>
+                <div
+                  key={f.id}
+                  className="row cols-folders stagger"
+                  style={{ "--i": order } as CSSProperties}
+                  role="treeitem" aria-expanded={kids ? isOpen : undefined}>
                   <div className="cell-name" style={{ paddingLeft: `${depth * 1.6}rem` }}>
                     {kids ? (
                       <button

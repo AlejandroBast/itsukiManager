@@ -1,7 +1,9 @@
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type CleanProgress, type CleanResult, type JunkItem, type JunkView, type Safety } from "../api";
 import { formatCount, formatSize } from "../format";
 import { useJob } from "../hooks";
+import mascot from "../assets/images/mascot-cleanup.png";
 import { Icon } from "./Icon";
 import { Alert, Badge, BusyState, Checkbox, EmptyState, Modal, PageHeader } from "./ui";
 
@@ -138,6 +140,7 @@ export function CleanupView(props: { defaultToRecycle: boolean; defaultIncludeOp
 
         {!cleaning && !busy && result && (
           <div className="state">
+            <img className="hop" src={mascot} alt="" />
             <span className="state-icon ok" aria-hidden="true">
               <Icon name="check" />
             </span>
@@ -183,13 +186,13 @@ export function CleanupView(props: { defaultToRecycle: boolean; defaultIncludeOp
               </Alert>
             )}
             <div className="page-scroll">
-              {categories.map((c) => {
+              {categories.map((c, index) => {
                 const available = c.items.filter(canSelect);
                 const picked = available.filter((i) => selected.has(i.id)).length;
                 const isOpen = expanded.has(c.id);
                 const inUse = includeOpen ? 0 : c.items.filter((i) => i.openApp).length;
                 return (
-                  <div key={c.id} className="junk-cat">
+                  <div key={c.id} className="junk-cat stagger" style={{ "--i": index } as CSSProperties}>
                     <div className="row cols-junk">
                       <Checkbox
                         label={`Seleccionar ${c.label}`}

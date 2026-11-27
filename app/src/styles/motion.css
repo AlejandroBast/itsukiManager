@@ -1,0 +1,233 @@
+/*
+  Animaciones: cortas y con un toque juguetón (muelles suaves). Solo transform y opacity, salvo el dibujo del
+  donut (stroke-dasharray). Con «Efectos de animación» apagado en Windows se quedan en fundidos o desaparecen.
+*/
+
+:root {
+  /* Sobrepasa un poco y vuelve: rebote suave (easeOutBack). */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ---------- Mascota con vida ---------- */
+
+.welcome .face {
+  animation: float 5s ease-in-out infinite;
+}
+
+.deco-star {
+  animation: twinkle 3.2s ease-in-out infinite;
+}
+
+.deco-star:nth-of-type(2) {
+  animation-delay: -0.8s;
+}
+
+.deco-star:nth-of-type(3) {
+  animation-delay: -1.6s;
+}
+
+.deco-star:nth-of-type(4) {
+  animation-delay: -2.4s;
+}
+
+.brand img,
+.cleanup .mascot {
+  transition: transform 0.35s var(--ease-spring);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .brand:hover img {
+    transform: rotate(-6deg) scale(1.04);
+  }
+
+  .cleanup:hover .mascot {
+    transform: translateY(-0.3rem) rotate(4deg);
+  }
+}
+
+/* Al terminar la limpieza: la mascota salta y el check aparece con rebote. */
+.state .hop {
+  animation: hop 0.6s var(--ease-spring) both;
+}
+
+.state-icon.ok {
+  animation: pop-in 0.35s var(--ease-spring) 0.15s both;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.3rem);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.25) rotate(18deg);
+  }
+}
+
+@keyframes hop {
+  0% {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.95);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-0.8rem) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Datos que se rellenan ---------- */
+
+.donut .arc {
+  animation: draw 0.7s var(--ease) both;
+  animation-delay: calc(var(--i) * 90ms + 150ms);
+}
+
+@keyframes draw {
+  from {
+    stroke-dasharray: 0 var(--circ);
+  }
+}
+
+/* ---------- Botones y tarjetas ---------- */
+
+.btn {
+  transition:
+    background 0.2s var(--ease),
+    box-shadow 0.2s var(--ease),
+    transform 0.25s var(--ease-spring),
+    opacity 0.2s;
+}
+
+.icon-btn,
+.switch-knob,
+.check-box,
+.seg {
+  transition-property: background, color, border-color, transform;
+  transition-duration: 0.15s, 0.15s, 0.15s, 0.3s;
+  transition-timing-function: var(--ease), var(--ease), var(--ease), var(--ease-spring);
+}
+
+.card {
+  transition: border-color 0.25s var(--ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover:not(:disabled) {
+    transform: translateY(-0.12rem);
+  }
+
+  .icon-btn:hover:not(:disabled) .icon,
+  .nav-item:hover .icon {
+    transform: scale(1.12);
+  }
+
+  .card:hover {
+    border-color: rgba(255, 120, 136, 0.32);
+  }
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-duration: 0.1s;
+}
+
+.icon-btn:active:not(:disabled),
+.seg:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.icon-btn .icon,
+.nav-item .icon {
+  transition: transform 0.3s var(--ease-spring);
+}
+
+.check input:checked + .check-box .icon {
+  animation: pop-in 0.25s var(--ease-spring);
+}
+
+/* ---------- Menú lateral: el resaltado se desliza ---------- */
+
+.nav-item.active {
+  border-color: transparent;
+  background: transparent;
+}
+
+.nav-highlight {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: -1;
+  height: 3.94rem;
+  border: 1px solid rgba(255, 150, 160, 0.45);
+  border-radius: var(--radius-control);
+  background: linear-gradient(90deg, #6c2d39 0%, #b2465a 55%, #dc5d69 100%);
+  transform: translateY(calc(var(--i) * 4.33rem * var(--vy)));
+  transition: transform 0.4s var(--ease-spring);
+  pointer-events: none;
+}
+
+/* ---------- Listas en cascada ---------- */
+
+.stagger {
+  animation: rise 0.3s var(--ease) both;
+  animation-delay: calc(min(var(--i), 10) * 30ms);
+}
+
+/* ---------- Menos movimiento ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome .face,
+  .deco-star,
+  .donut .arc,
+  .check input:checked + .check-box .icon {
+    animation: none;
+  }
+
+  .rise,
+  .stagger,
+  .state .hop,
+  .state-icon.ok {
+    animation-name: fade;
+  }
+
+  .brand img,
+  .cleanup .mascot,
+  .nav-highlight,
+  .progress > span {
+    transition: none;
+  }
+
+  .btn,
+  .icon-btn,
+  .icon-btn .icon,
+  .nav-item .icon,
+  .seg {
+    transform: none !important;
+  }
+}

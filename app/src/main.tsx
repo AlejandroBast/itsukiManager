@@ -5,6 +5,7 @@ import "./styles/theme.css";
 import "./styles/app.css";
 import "./styles/pages.css";
 import "./styles/settings.css";
+import "./styles/motion.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import mascot from "../assets/images/mascot-sidebar.png";
 import watermark from "../assets/images/mascot-watermark.png";
 import { Icon, type IconName } from "./Icon";
@@ -27,6 +28,11 @@ export function Sidebar({ section, onSelect }: { section: Section; onSelect: (s:
         </div>
       </div>
       <nav className="nav" aria-label="Secciones">
+        <span
+          className="nav-highlight"
+          aria-hidden="true"
+          style={{ "--i": Math.max(0, SECTIONS.findIndex((s) => s.id === section)) } as CSSProperties}
+        />
         {SECTIONS.map((s) => (
           <button
             key={s.id}

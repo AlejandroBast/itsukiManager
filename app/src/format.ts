@@ -2,7 +2,7 @@ const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
 
 /** Tamaño en unidades binarias, como el Explorador: `320 GB`, `8,5 GB`. */
 export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
   let value = bytes;
   let unit = 0;
   while (value >= 1024 && unit < UNITS.length - 1) {

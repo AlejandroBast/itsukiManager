@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { api, type DiskInfo, type DupFile, type DupGroup, type DupView } from "../api";
 import { driveLabel, formatCount, formatDate, formatDuration, formatSize } from "../format";
@@ -152,10 +153,10 @@ export function DuplicatesView({ drives, defaultScope, defaultMin, onChanged }: 
         )}
         {!busy && data && data.groups.length > 0 && (
           <div className="page-scroll">
-            {data.groups.map((g) => {
+            {data.groups.map((g, i) => {
               const [oldest, ...copies] = g.files;
               return (
-                <div key={g.files.map((f) => f.path).join("|")} className="dup-group">
+                <div key={g.files.map((f) => f.path).join("|")} className="dup-group stagger" style={{ "--i": i } as CSSProperties}>
                   <div className="dup-head">
                     <span className="dup-title">
                       {formatCount(g.files.length)} copias · {formatSize(g.size)} cada una
